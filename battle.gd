@@ -1,8 +1,8 @@
 extends RefCounted
 ## Auto-battle simulation. Has no nodes, so it runs the same in the game and in tests.
 
-const Data = preload("res://scripts/data.gd")
-const Unit = preload("res://scripts/unit.gd")
+const Data = preload("res://data.gd")
+const Unit = preload("res://unit.gd")
 
 signal acted(actor: Unit, target: Unit, amount: float, kind: String)  # kind: hit, crit, heal, shield
 signal ult_used(actor: Unit)
