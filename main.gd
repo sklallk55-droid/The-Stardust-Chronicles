@@ -7,6 +7,7 @@ const Battle = preload("res://battle.gd")
 const Equipment = preload("res://equipment.gd")
 const Chibi = preload("res://chibi.gd")
 const Quests = preload("res://quests.gd")
+const Ascension = preload("res://ascension.gd")
 
 const SAVE_PATH := "user://save.cfg"
 const IDLE_CAP_SEC := 12 * 3600
@@ -32,6 +33,8 @@ var rng := RandomNumberGenerator.new()
 var mode := "story"  # story or tower
 var tower_floor := 1
 var quest_state := {}
+var dust := 0  # star dust for ascension
+var stars := {}  # hero_id -> stars
 
 var stage_label: Label
 var gold_label: Label
@@ -252,6 +255,7 @@ func _prepare_battle() -> void:
 	for d in Data.heroes():
 		var hero := Unit.new(d, true, Data.hero_power(level))
 		Equipment.apply(hero, equipped.get(hero.id, {}))
+		Ascension.apply(hero, stars.get(hero.id, 0))
 		hero_units.append(hero)
 	var enemy_units := []
 	var enemy_list := Data.tower_enemies(tower_floor) if mode == "tower" else Data.stage_enemies(stage)
@@ -309,6 +313,8 @@ func _on_ended(win: bool) -> void:
 			inventory.append(drop)
 			Equipment.equip_best(equipped, inventory)
 			result_label.text += "\nВыпало: " + Equipment.item_label(drop)
+		dust += Ascension.stage_dust(stage)
+		result_label.text += "\nЗвёздная пыль +%d" % Ascension.stage_dust(stage)
 		result_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3))
 		stage += 1
 		start_button.text = "Дальше"
@@ -333,6 +339,8 @@ func _on_tower_win() -> void:
 	inventory.append(drop)
 	Equipment.equip_best(equipped, inventory)
 	result_label.text += "\nВыпало: " + Equipment.item_label(drop)
+	dust += Ascension.tower_dust(tower_floor)
+	result_label.text += "\nЗвёздная пыль +%d" % Ascension.tower_dust(tower_floor)
 	result_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3))
 	tower_floor += 1
 	start_button.text = "Выше"
@@ -455,9 +463,11 @@ func _fill_squad() -> void:
 		var u := Unit.new(d, true, Data.hero_power(level))
 		var gear: Dictionary = equipped.get(u.id, {})
 		Equipment.apply(u, gear)
+		var hero_stars: int = stars.get(u.id, 0)
+		Ascension.apply(u, hero_stars)
 		var block := VBoxContainer.new()
 		block.add_theme_constant_override("separation", 4)
-		var title := _label("%s · %s · ур. %d" % [u.name, Data.ELEMENT_NAMES[u.element], level], 38)
+		var title := _label("%s · %s · ур. %d · звёзды %d/%d" % [u.name, Data.ELEMENT_NAMES[u.element], level, hero_stars, Ascension.MAX_STARS], 38)
 		title.add_theme_color_override("font_color", u.color)
 		block.add_child(title)
 		block.add_child(_label("HP %d   АТК %d   ЗАЩ %d   СКР %d" % [u.max_hp, u.atk, u.def, u.spd], 30))
@@ -470,10 +480,39 @@ func _fill_squad() -> void:
 			var l := _label("   " + text, 28)
 			l.add_theme_color_override("font_color", color)
 			block.add_child(l)
+		var passive := _label("   Пассивка (%d зв.): %s" % [Ascension.PASSIVE_STAR, Ascension.PASSIVES[u.id]], 28)
+		var passive_on := hero_stars >= Ascension.PASSIVE_STAR
+		passive.add_theme_color_override("font_color", Color(1, 0.85, 0.3) if passive_on else Color(0.6, 0.6, 0.7))
+		block.add_child(passive)
+		if hero_stars < Ascension.MAX_STARS:
+			var price := Ascension.cost(hero_stars)
+			var id := u.id
+			var asc := _button("Возвысить (%d пыли)" % price, func(): _ascend(id))
+			asc.custom_minimum_size.x = 520
+			asc.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			asc.disabled = dust < price
+			block.add_child(asc)
 		squad_list.add_child(block)
 	var bag := _label("В сумке: %d / %d" % [inventory.size(), Equipment.INVENTORY_CAP], 28)
 	bag.modulate = Color(1, 1, 1, 0.7)
 	squad_list.add_child(bag)
+
+
+func _ascend(hero_id: String) -> void:
+	var have: int = stars.get(hero_id, 0)
+	var price := Ascension.cost(have)
+	if have >= Ascension.MAX_STARS or dust < price:
+		return
+	dust -= price
+	stars[hero_id] = have + 1
+	_save()
+	_refresh_top()
+	if have == 0:
+		squad_panel.hide()
+		_prepare_battle()
+		_show_story(Ascension.STORIES[hero_id])
+	else:
+		_fill_squad()
 
 
 # --- Daily quests ---
@@ -529,7 +568,10 @@ func _fill_quests() -> void:
 		row.add_child(info)
 		var claimed: bool = quest_state["claimed"].has(q["id"])
 		var b := _button("Получено" if claimed else "+%d" % Quests.reward(q, stage), func():
-			gold += Quests.claim(quest_state, q, stage)
+			var got := Quests.claim(quest_state, q, stage)
+			gold += got
+			if got > 0:
+				dust += Ascension.QUEST_DUST
 			_save()
 			_refresh_top()
 			_fill_quests())
@@ -571,7 +613,7 @@ func _refresh_top() -> void:
 	tower_button.text = "К сюжету" if mode == "tower" else "Башня Пепла"
 	var ready_quests := Quests.unclaimed_count(quest_state)
 	quests_button.text = "Задания (%d!)" % ready_quests if ready_quests > 0 else "Задания"
-	gold_label.text = "Золото: %d" % gold
+	gold_label.text = "Золото: %d · Пыль: %d" % [gold, dust]
 	level_label.text = "Уровень отряда: %d" % level
 	upgrade_button.text = "Улучшить (%d)" % Data.upgrade_cost(level)
 
@@ -681,6 +723,8 @@ func _save() -> void:
 	cfg.set_value("gear", "inventory", inventory)
 	cfg.set_value("tower", "floor", tower_floor)
 	cfg.set_value("quests", "state", quest_state)
+	cfg.set_value("ascension", "dust", dust)
+	cfg.set_value("ascension", "stars", stars)
 	cfg.set_value("player", "last_seen", int(Time.get_unix_time_from_system()))
 	cfg.save(SAVE_PATH)
 
@@ -697,6 +741,8 @@ func _load() -> void:
 	inventory = cfg.get_value("gear", "inventory", [])
 	tower_floor = cfg.get_value("tower", "floor", 1)
 	quest_state = cfg.get_value("quests", "state", {})
+	dust = cfg.get_value("ascension", "dust", 0)
+	stars = cfg.get_value("ascension", "stars", {})
 	var away := int(Time.get_unix_time_from_system()) - int(cfg.get_value("player", "last_seen", 0))
 	away = clampi(away, 0, IDLE_CAP_SEC)
 	var idle_gold := int(away / 60.0 * Data.idle_gold_per_min(maxi(1, stage - 1)))
