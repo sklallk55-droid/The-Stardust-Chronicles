@@ -9,6 +9,7 @@ const Chibi = preload("res://chibi.gd")
 const Quests = preload("res://quests.gd")
 const Ascension = preload("res://ascension.gd")
 const Summon = preload("res://summon.gd")
+const Levels = preload("res://levels.gd")
 
 const SAVE_PATH := "user://save.cfg"
 const IDLE_CAP_SEC := 12 * 3600
@@ -38,6 +39,8 @@ var tower_floor := 1
 var quest_state := {}
 var dust := 0  # star dust for ascension
 var stars := {}  # hero_id -> stars
+var hero_levels := {}  # hero_id -> personal level
+var hero_xp := {}  # hero_id -> experience towards the next level
 var crystals := 0
 var owned: Array = ["akira", "ryu", "yuki", "kae"]
 var squad: Array = ["akira", "ryu", "yuki", "kae"]
@@ -127,8 +130,10 @@ func _build_ui() -> void:
 	var middle := CenterContainer.new()
 	middle.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(middle)
-	result_label = _label("", 72)
+	result_label = _label("", 56)
 	result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	result_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	result_label.custom_minimum_size.x = 960
 	middle.add_child(result_label)
 
 	hero_row = _row()
@@ -266,6 +271,7 @@ func _prepare_battle() -> void:
 		var hero := Unit.new(d, true, Data.hero_power(level))
 		Equipment.apply(hero, equipped.get(hero.id, {}))
 		Ascension.apply(hero, stars.get(hero.id, 0))
+		Levels.apply(hero, hero_levels.get(hero.id, 1))
 		hero_units.append(hero)
 	var enemy_units := []
 	var enemy_list := Data.tower_enemies(tower_floor) if mode == "tower" else Data.stage_enemies(stage)
@@ -326,6 +332,7 @@ func _on_ended(win: bool) -> void:
 			result_label.text += "\nВыпало: " + Equipment.item_label(drop)
 		dust += Ascension.stage_dust(stage)
 		result_label.text += "\nЗвёздная пыль +%d" % Ascension.stage_dust(stage)
+		_give_xp(Levels.stage_xp(stage))
 		if Summon.stage_crystals(stage) > 0:
 			crystals += Summon.stage_crystals(stage)
 			result_label.text += "\nКристаллы +%d" % Summon.stage_crystals(stage)
@@ -356,12 +363,23 @@ func _on_tower_win() -> void:
 	result_label.text += "\nВыпало: " + Equipment.item_label(drop)
 	dust += Ascension.tower_dust(tower_floor)
 	result_label.text += "\nЗвёздная пыль +%d" % Ascension.tower_dust(tower_floor)
+	_give_xp(Levels.tower_xp(tower_floor))
 	if Summon.tower_crystals(tower_floor) > 0:
 		crystals += Summon.tower_crystals(tower_floor)
 		result_label.text += "\nКристаллы +%d" % Summon.tower_crystals(tower_floor)
 	result_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3))
 	tower_floor += 1
 	start_button.text = "Выше"
+
+
+func _give_xp(amount: int) -> void:
+	result_label.text += " · Опыт +%d" % amount
+	var grown := []
+	for id in squad:
+		if Levels.add_xp(hero_levels, hero_xp, id, amount, stars.get(id, 0)) > 0:
+			grown.append(Data.heroes_by_ids([id])[0]["name"])
+	if not grown.is_empty():
+		result_label.text += "\nНовый уровень: " + ", ".join(grown)
 
 
 func _toggle_tower() -> void:
@@ -485,11 +503,21 @@ func _fill_squad() -> void:
 		Equipment.apply(u, gear)
 		var hero_stars: int = stars.get(u.id, 0)
 		Ascension.apply(u, hero_stars)
+		var hero_level: int = hero_levels.get(u.id, 1)
+		Levels.apply(u, hero_level)
 		var block := VBoxContainer.new()
 		block.add_theme_constant_override("separation", 4)
 		var title := _label("%s · %s · звёзды %d/%d%s" % [u.name, Data.ELEMENT_NAMES[u.element], hero_stars, Ascension.MAX_STARS, " · в отряде" if in_squad else ""], 38)
 		title.add_theme_color_override("font_color", u.color)
 		block.add_child(title)
+		var level_text := "Ур. %d/%d · опыт %d/%d" % [hero_level, Levels.cap(hero_stars), hero_xp.get(u.id, 0), Levels.xp_to_next(hero_level)]
+		if hero_level >= Levels.cap(hero_stars):
+			level_text = "Ур. %d/%d · предел, нужно возвышение" % [hero_level, Levels.cap(hero_stars)]
+			if hero_stars >= Ascension.MAX_STARS:
+				level_text = "Ур. %d · максимум" % hero_level
+		var lvl_label := _label(level_text, 30)
+		lvl_label.add_theme_color_override("font_color", Color(0.6, 0.9, 1.0))
+		block.add_child(lvl_label)
 		block.add_child(_label("HP %d   АТК %d   ЗАЩ %d   СКР %d" % [u.max_hp, u.atk, u.def, u.spd], 30))
 		for slot in Equipment.SLOTS:
 			var text := "%s: —" % Equipment.SLOT_NAMES[slot]
@@ -790,6 +818,8 @@ func _save() -> void:
 	cfg.set_value("summon", "crystals", crystals)
 	cfg.set_value("summon", "owned", owned)
 	cfg.set_value("summon", "squad", squad)
+	cfg.set_value("levels", "level", hero_levels)
+	cfg.set_value("levels", "xp", hero_xp)
 	cfg.set_value("player", "last_seen", int(Time.get_unix_time_from_system()))
 	cfg.save(SAVE_PATH)
 
@@ -811,6 +841,8 @@ func _load() -> void:
 	crystals = cfg.get_value("summon", "crystals", 0)
 	owned = cfg.get_value("summon", "owned", owned)
 	squad = cfg.get_value("summon", "squad", squad)
+	hero_levels = cfg.get_value("levels", "level", {})
+	hero_xp = cfg.get_value("levels", "xp", {})
 	var away := int(Time.get_unix_time_from_system()) - int(cfg.get_value("player", "last_seen", 0))
 	away = clampi(away, 0, IDLE_CAP_SEC)
 	var idle_gold := int(away / 60.0 * Data.idle_gold_per_min(maxi(1, stage - 1)))
