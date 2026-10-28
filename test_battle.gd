@@ -8,6 +8,7 @@ const Equipment = preload("res://equipment.gd")
 const Quests = preload("res://quests.gd")
 const Ascension = preload("res://ascension.gd")
 const Summon = preload("res://summon.gd")
+const Levels = preload("res://levels.gd")
 
 
 func _init() -> void:
@@ -31,6 +32,7 @@ func _init() -> void:
 	failures += _test_quests()
 	failures += _test_ascension()
 	failures += _test_summon()
+	failures += _test_levels()
 	quit(1 if failures > 0 else 0)
 
 
@@ -171,4 +173,39 @@ func _test_summon() -> int:
 			wins += 1
 	print("stage 10, level 5, summon squad: win %3d%%" % wins)
 	print("summon errors: %d" % errors)
+	return errors
+
+
+## Checks experience, the level cap and that personal levels make a hard stage winnable.
+func _test_levels() -> int:
+	var errors := 0
+	var levels := {}
+	var xp := {}
+	var total := 0
+	for stage in range(1, 31):
+		total += Levels.add_xp(levels, xp, "akira", Levels.stage_xp(stage), 0)
+	if levels["akira"] != Levels.cap(0) or xp["akira"] != 0:
+		print("FAIL: level should stop at cap %d, got %d (xp %d)" % [Levels.cap(0), levels["akira"], xp["akira"]])
+		errors += 1
+	var after := Levels.add_xp(levels, xp, "akira", 10000, 1)
+	if levels["akira"] != Levels.cap(1) or after != Levels.cap(1) - Levels.cap(0):
+		print("FAIL: a star should raise the cap to %d, got %d" % [Levels.cap(1), levels["akira"]])
+		errors += 1
+	var wins := [0, 0]
+	for i in 100:
+		for k in 2:
+			var heroes := []
+			for d in Data.heroes():
+				var u := Unit.new(d, true, Data.hero_power(14))
+				Levels.apply(u, 1 if k == 0 else 20)
+				heroes.append(u)
+			var enemies := []
+			for d in Data.stage_enemies(35):
+				enemies.append(Unit.new(d, false, Data.enemy_power(35)))
+			if _fight(heroes, enemies, i + 1).victory:
+				wins[k] += 1
+	print("levels: 30 stages give %d levels (cap %d); stage 35: level 1 win %d%%, level 20 win %d%%" % [total, Levels.cap(0), wins[0], wins[1]])
+	if wins[1] <= wins[0]:
+		print("FAIL: personal levels should help")
+		errors += 1
 	return errors
