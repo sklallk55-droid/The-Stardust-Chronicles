@@ -7,6 +7,7 @@ const Battle = preload("res://battle.gd")
 const Equipment = preload("res://equipment.gd")
 const Quests = preload("res://quests.gd")
 const Ascension = preload("res://ascension.gd")
+const Summon = preload("res://summon.gd")
 
 
 func _init() -> void:
@@ -29,6 +30,7 @@ func _init() -> void:
 	failures += _test_tower()
 	failures += _test_quests()
 	failures += _test_ascension()
+	failures += _test_summon()
 	quit(1 if failures > 0 else 0)
 
 
@@ -138,4 +140,35 @@ func _test_ascension() -> int:
 		if not Ascension.STORIES.has(id):
 			errors += 1
 	print("ascension errors: %d" % errors)
+	return errors
+
+
+## Every summon hero has a look, a passive and lines; a squad of summon heroes can fight.
+func _test_summon() -> int:
+	var errors := 0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var owned := []
+	for i in 40:
+		var got := Summon.roll(rng, owned, Data.summon_heroes())
+		if got["new"]:
+			owned.append(got["id"])
+	if owned.size() != Data.summon_heroes().size():
+		errors += 1
+	for d in Data.summon_heroes():
+		var id: String = d["id"]
+		if not (Summon.INTRO.has(id) and Ascension.PASSIVES.has(id) and Ascension.STORIES.has(id)):
+			errors += 1
+	var wins := 0
+	for i in 100:
+		var heroes := []
+		for d in Data.heroes_by_ids(["ren", "tetsuo", "mira", "isa"]):
+			heroes.append(Unit.new(d, true, Data.hero_power(5)))
+		var enemies := []
+		for d in Data.stage_enemies(10):
+			enemies.append(Unit.new(d, false, Data.enemy_power(10)))
+		if _fight(heroes, enemies, i + 1).victory:
+			wins += 1
+	print("stage 10, level 5, summon squad: win %3d%%" % wins)
+	print("summon errors: %d" % errors)
 	return errors
