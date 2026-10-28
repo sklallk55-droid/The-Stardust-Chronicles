@@ -130,3 +130,24 @@ static func victory_gold(stage: int) -> int:
 ## Idle income per minute while the squad "stands guard" on the last stage.
 static func idle_gold_per_min(stage: int) -> float:
 	return 5.0 + stage
+
+
+# --- Tower of Ash ---
+
+const TOWER_UNLOCK_STAGE := 11
+
+
+## Floor N is as strong as story stage 9 + N; every 5th floor has a boss.
+static func tower_power(floor_num: int) -> float:
+	return enemy_power(9 + floor_num)
+
+
+static func tower_enemies(floor_num: int) -> Array:
+	var pool := enemies()
+	if floor_num % 5 == 0:
+		var boss: Dictionary = bosses()[(floor_num / 5 - 1) % bosses().size()]
+		return [pool[floor_num % pool.size()], boss, pool[(floor_num + 2) % pool.size()]]
+	var out := []
+	for i in 3:
+		out.append(pool[(floor_num * 3 + i) % pool.size()])
+	return out
