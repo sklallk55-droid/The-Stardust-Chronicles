@@ -23,6 +23,31 @@ static func heroes() -> Array:
 	]
 
 
+
+## Heroes that join through summon.
+static func summon_heroes() -> Array:
+	return [
+		{"id": "ren", "name": "Рэн", "role": "dps", "element": "dark",
+			"hp": 850, "atk": 125, "def": 35, "spd": 108, "color": Color(0.7, 0.5, 0.95)},
+		{"id": "mira", "name": "Мира", "role": "healer", "element": "light",
+			"hp": 820, "atk": 72, "def": 38, "spd": 108, "color": Color(1.0, 0.92, 0.65)},
+		{"id": "tetsuo", "name": "Тэцуо", "role": "tank", "element": "nature",
+			"hp": 1500, "atk": 75, "def": 75, "spd": 85, "color": Color(0.55, 0.8, 0.4)},
+		{"id": "isa", "name": "Иса", "role": "mage", "element": "fire",
+			"hp": 720, "atk": 135, "def": 28, "spd": 102, "color": Color(1.0, 0.5, 0.3)},
+	]
+
+
+## Hero data for the given ids, in that order.
+static func heroes_by_ids(ids: Array) -> Array:
+	var out := []
+	for id in ids:
+		for d in heroes() + summon_heroes():
+			if d["id"] == id:
+				out.append(d)
+	return out
+
+
 static func enemies() -> Array:
 	return [
 		{"id": "shade", "name": "Тень", "role": "enemy", "element": "dark",
