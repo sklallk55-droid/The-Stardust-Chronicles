@@ -1,9 +1,9 @@
 extends Control
 ## Prototype screen: story, auto-battle, rewards and squad upgrade. UI is built in code.
 
-const Data = preload("res://scripts/data.gd")
-const Unit = preload("res://scripts/unit.gd")
-const Battle = preload("res://scripts/battle.gd")
+const Data = preload("res://data.gd")
+const Unit = preload("res://unit.gd")
+const Battle = preload("res://battle.gd")
 
 const SAVE_PATH := "user://save.cfg"
 const IDLE_CAP_SEC := 12 * 3600
