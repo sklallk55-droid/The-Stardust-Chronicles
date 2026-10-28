@@ -13,7 +13,7 @@ const Levels = preload("res://levels.gd")
 
 func _init() -> void:
 	var failures := 0
-	for case in [[1, 1], [5, 3], [10, 5], [10, 1], [20, 9], [30, 14]]:
+	for case in [[1, 1], [5, 3], [10, 5], [10, 1], [20, 9], [30, 14], [35, 16], [40, 16], [50, 20], [60, 28]]:
 		var stage: int = case[0]
 		var level: int = case[1]
 		var wins := 0
