@@ -329,3 +329,33 @@ static func gold_styles(b: Button) -> void:
 		s.shadow_size = 16
 		b.add_theme_stylebox_override(st, s)
 	b.add_theme_color_override("font_color", Color(1, 0.97, 0.85))
+
+
+## Big centred chapter title that fades in and out.
+static func title_card(parent: Control, title: String, subtitle: String) -> void:
+	var box := VBoxContainer.new()
+	box.position = Vector2(0, 600)
+	box.size = Vector2(1080, 300)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for t in [[title, 46, Color(1, 0.85, 0.5)], [subtitle, 84, Color.WHITE]]:
+		var l := Label.new()
+		l.text = t[0]
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.add_theme_font_size_override("font_size", t[1])
+		l.add_theme_color_override("font_color", t[2])
+		l.add_theme_color_override("font_outline_color", Color(0.2, 0.1, 0.35))
+		l.add_theme_constant_override("outline_size", 16)
+		box.add_child(l)
+	var line := ColorRect.new()
+	line.color = Color(1, 0.85, 0.5, 0.8)
+	line.custom_minimum_size = Vector2(520, 4)
+	line.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_child(line)
+	parent.add_child(box)
+	box.modulate.a = 0.0
+	var tw := box.create_tween()
+	tw.tween_property(box, "modulate:a", 1.0, 0.5)
+	tw.tween_interval(2.0)
+	tw.tween_property(box, "modulate:a", 0.0, 0.7)
+	tw.tween_callback(box.queue_free)
