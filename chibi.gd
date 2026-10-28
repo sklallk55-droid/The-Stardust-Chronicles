@@ -32,6 +32,16 @@ const LOOKS := {
 
 var id := ""
 var look: Dictionary = {}
+var animate := true
+var _t := randf() * 10.0
+var _base := Transform2D.IDENTITY
+var _blink := false
+
+
+func _process(delta: float) -> void:
+	if animate and is_visible_in_tree():
+		_t += delta
+		queue_redraw()
 
 
 func setup(unit_id: String) -> void:
@@ -41,6 +51,12 @@ func setup(unit_id: String) -> void:
 
 
 func _draw() -> void:
+	# Idle breathing: a gentle squash anchored at the feet; monsters sway a little more.
+	var human: bool = look.get("kind", "blob") == "human"
+	var breath := sin(_t * (2.2 if human else 3.0)) * (0.02 if human else 0.04)
+	_base = Transform2D(0.0, Vector2(1.0 - breath * 0.5, 1.0 + breath), 0.0, Vector2(size.x * breath * 0.25, -size.y * breath))
+	_blink = fmod(_t, 3.7) < 0.12
+	draw_set_transform_matrix(_base)
 	match look.get("kind", "blob"):
 		"human":
 			_draw_human()
@@ -59,12 +75,15 @@ func _p(x: float, y: float) -> Vector2:
 
 
 func _ellipse(center: Vector2, rx: float, ry: float, color: Color) -> void:
-	draw_set_transform(center, 0.0, Vector2(rx, ry))
+	draw_set_transform_matrix(_base * Transform2D(0.0, Vector2(rx, ry), 0.0, center))
 	draw_circle(Vector2.ZERO, 1.0, color)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	draw_set_transform_matrix(_base)
 
 
 func _anime_eye(center: Vector2, color: Color, s: float) -> void:
+	if _blink:
+		draw_arc(center + Vector2(0, 0.01 * s), 0.05 * s, 0.25, PI - 0.25, 8, Color(0.1, 0.07, 0.12), 0.014 * s)
+		return
 	_ellipse(center, 0.055 * s, 0.075 * s, Color(0.1, 0.07, 0.12))
 	_ellipse(center + Vector2(0, 0.006 * s), 0.045 * s, 0.063 * s, color)
 	_ellipse(center + Vector2(0, 0.02 * s), 0.03 * s, 0.035 * s, color.darkened(0.45))
@@ -80,6 +99,7 @@ func _draw_human() -> void:
 		draw_rect(Rect2(_p(0.2, 0.42), _p(0.6, 0.5)), hair.darkened(0.1))
 	# Body and collar.
 	draw_colored_polygon(PackedVector2Array([_p(0.3, 0.74), _p(0.7, 0.74), _p(0.82, 1.0), _p(0.18, 1.0)]), look["outfit"])
+	draw_colored_polygon(PackedVector2Array([_p(0.24, 0.9), _p(0.76, 0.9), _p(0.82, 1.0), _p(0.18, 1.0)]), Color(0, 0, 0, 0.18))
 	draw_colored_polygon(PackedVector2Array([_p(0.4, 0.74), _p(0.6, 0.74), _p(0.5, 0.86)]), look["trim"])
 	# Back hair, ears for the fox girl, then the face.
 	draw_circle(_p(0.5, 0.44), 0.33 * s, hair.darkened(0.1))
@@ -103,6 +123,9 @@ func _draw_human() -> void:
 		if i > 0:
 			cap.append(_p(x - 0.3 / tips, 0.46 + depth))
 	draw_colored_polygon(cap, hair)
+	# Glossy anime hair shine.
+	draw_arc(_p(0.5, 0.46), 0.22 * s, PI * 1.18, PI * 1.45, 10, Color(1, 1, 1, 0.35), 0.03 * s)
+	draw_arc(_p(0.5, 0.46), 0.22 * s, PI * 1.55, PI * 1.68, 6, Color(1, 1, 1, 0.25), 0.03 * s)
 	if look["style"] == "bob" or look["style"] == "long":
 		draw_rect(Rect2(_p(0.2, 0.44), _p(0.07, 0.24)), hair)
 		draw_rect(Rect2(_p(0.73, 0.44), _p(0.07, 0.24)), hair)
