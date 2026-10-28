@@ -1,9 +1,9 @@
 extends SceneTree
-## Headless balance check: godot --headless --path . --script res://tests/test_battle.gd
+## Headless balance check: godot --headless --path . --script res://test_battle.gd
 
-const Data = preload("res://scripts/data.gd")
-const Unit = preload("res://scripts/unit.gd")
-const Battle = preload("res://scripts/battle.gd")
+const Data = preload("res://data.gd")
+const Unit = preload("res://unit.gd")
+const Battle = preload("res://battle.gd")
 
 
 func _init() -> void:
