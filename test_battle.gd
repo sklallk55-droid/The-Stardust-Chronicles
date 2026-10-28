@@ -4,6 +4,7 @@ extends SceneTree
 const Data = preload("res://data.gd")
 const Unit = preload("res://unit.gd")
 const Battle = preload("res://battle.gd")
+const Equipment = preload("res://equipment.gd")
 
 
 func _init() -> void:
@@ -22,6 +23,7 @@ func _init() -> void:
 				wins += 1
 		print("stage %2d, level %2d: win %3d%%, avg %.1fs" % [stage, level, wins, total_time / 100.0])
 	print("unfinished battles: %d" % failures)
+	failures += _test_equipment()
 	quit(1 if failures > 0 else 0)
 
 
@@ -37,3 +39,29 @@ func _run(stage: int, level: int, seed_value: int) -> Battle:
 	while not b.finished:
 		b.step()
 	return b
+
+
+## Rolls 200 drops, auto-equips them and checks every hero ends up with all slots filled.
+func _test_equipment() -> int:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var equipped := {}
+	var inventory := []
+	for stage in range(1, 201):
+		var drop := Equipment.roll_drop(stage, rng)
+		if not drop.is_empty():
+			inventory.append(drop)
+			Equipment.equip_best(equipped, inventory)
+	var errors := 0
+	for d in Data.heroes():
+		var gear: Dictionary = equipped.get(d["id"], {})
+		if gear.size() != Equipment.SLOTS.size():
+			errors += 1
+		var u := Unit.new(d, true)
+		Equipment.apply(u, gear)
+		if u.atk < d["atk"] or u.max_hp < d["hp"]:
+			errors += 1
+	if inventory.size() > Equipment.INVENTORY_CAP:
+		errors += 1
+	print("equipment errors: %d, bag %d" % [errors, inventory.size()])
+	return errors
