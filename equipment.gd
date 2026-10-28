@@ -21,9 +21,9 @@ const PRIORITY := {
 
 
 ## Rolls a drop for a won stage. Returns an empty Dictionary when nothing drops.
-static func roll_drop(stage: int, rng: RandomNumberGenerator) -> Dictionary:
+static func roll_drop(stage: int, rng: RandomNumberGenerator, guaranteed: bool = false) -> Dictionary:
 	var is_boss := stage % 10 == 0
-	if not is_boss and rng.randf() > 0.6:
+	if not is_boss and not guaranteed and rng.randf() > 0.6:
 		return {}
 	var r := rng.randf()
 	var rarity := 0
