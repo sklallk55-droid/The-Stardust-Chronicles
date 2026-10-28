@@ -6,6 +6,7 @@ const Unit = preload("res://unit.gd")
 const Battle = preload("res://battle.gd")
 const Equipment = preload("res://equipment.gd")
 const Quests = preload("res://quests.gd")
+const Ascension = preload("res://ascension.gd")
 
 
 func _init() -> void:
@@ -27,6 +28,7 @@ func _init() -> void:
 	failures += _test_equipment()
 	failures += _test_tower()
 	failures += _test_quests()
+	failures += _test_ascension()
 	quit(1 if failures > 0 else 0)
 
 
@@ -109,4 +111,31 @@ func _test_quests() -> int:
 	if Quests.current({"date": "2000-01-01", "progress": {"wins": 9}, "claimed": ["wins"]})["claimed"].size() != 0:
 		errors += 1
 	print("quest errors: %d" % errors)
+	return errors
+
+
+## Three stars on every hero should noticeably help on stage 20 at level 9.
+func _test_ascension() -> int:
+	var errors := 0
+	var wins := 0
+	for i in 100:
+		var heroes := []
+		for d in Data.heroes():
+			var u := Unit.new(d, true, Data.hero_power(9))
+			Ascension.apply(u, 3)
+			heroes.append(u)
+		var enemies := []
+		for d in Data.stage_enemies(20):
+			enemies.append(Unit.new(d, false, Data.enemy_power(20)))
+		if _fight(heroes, enemies, i + 1).victory:
+			wins += 1
+	print("stage 20, level 9, 3 stars: win %3d%%" % wins)
+	var akira := Unit.new(Data.heroes()[0], true)
+	Ascension.apply(akira, 5)
+	if akira.crit_bonus <= 0.0 or akira.atk <= Data.heroes()[0]["atk"]:
+		errors += 1
+	for id in Ascension.PASSIVES:
+		if not Ascension.STORIES.has(id):
+			errors += 1
+	print("ascension errors: %d" % errors)
 	return errors
