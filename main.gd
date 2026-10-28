@@ -10,12 +10,14 @@ const Quests = preload("res://quests.gd")
 const Ascension = preload("res://ascension.gd")
 const Summon = preload("res://summon.gd")
 const Levels = preload("res://levels.gd")
+const Fx = preload("res://fx.gd")
 
 const SAVE_PATH := "user://save.cfg"
 const IDLE_CAP_SEC := 12 * 3600
 const CARD_W := 230.0
 const SPRITE := 185.0
 const SQUAD_SIZE := 4
+const GAME_VERSION := "1.0"
 const SPEAKER_IDS := {"Акира": "akira", "Рю": "ryu", "Юки": "yuki", "Каэ": "kae",
 	"Генерал Сара": "sara", "Вальдрам": "valdram", "Страж руин": "guardian",
 	"Рэн": "ren", "Мира": "mira", "Тэцуо": "tetsuo", "Иса": "isa"}
@@ -67,11 +69,19 @@ var quests_button: Button
 var summon_button: Button
 var quests_panel: PanelContainer
 var quests_list: VBoxContainer
+var backdrop: ColorRect
+var palette_key = 0
+var shake_root: Control
+var shake := 0.0
+var fx_layer: Control
+var cut_in_active := false
+var ult_gold := {}  # Button -> bool, whether the gold style is on
+var title_screen: Control
+var pending_card: Array = []  # chapter title waiting for the title screen to close
 
 
 func _ready() -> void:
-	theme = Theme.new()
-	theme.default_font_size = 34
+	theme = Fx.make_theme()
 	rng.randomize()
 	_build_ui()
 	_load()
@@ -84,6 +94,9 @@ func _process(delta: float) -> void:
 		battle.auto_ult = auto_ult
 		battle.update(delta * speed)
 		_refresh_units()
+	if shake > 0.0:
+		shake = maxf(0.0, shake - delta * 60.0)
+		shake_root.position = Vector2(randf_range(-shake, shake), randf_range(-shake, shake)) if shake > 0.0 else Vector2.ZERO
 
 
 func _notification(what: int) -> void:
@@ -94,10 +107,9 @@ func _notification(what: int) -> void:
 # --- UI construction ---
 
 func _build_ui() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.09, 0.07, 0.16)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	backdrop = Fx.make_backdrop()
+	add_child(backdrop)
+	add_child(Fx.make_embers())
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -106,13 +118,23 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_top", 64)
 	margin.add_theme_constant_override("margin_bottom", 48)
 	add_child(margin)
+	shake_root = margin
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 24)
 	margin.add_child(col)
 
+	var top_panel := PanelContainer.new()
+	var top_style := Fx.panel_style(Color(0.55, 0.45, 0.95, 0.5), 0.55)
+	top_style.set_content_margin_all(18)
+	top_style.content_margin_left = 28
+	top_style.content_margin_right = 28
+	top_panel.add_theme_stylebox_override("panel", top_style)
+	col.add_child(top_panel)
+	var top_col := VBoxContainer.new()
+	top_panel.add_child(top_col)
 	var top := HBoxContainer.new()
-	col.add_child(top)
+	top_col.add_child(top)
 	stage_label = _label("", 40)
 	stage_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(stage_label)
@@ -121,9 +143,9 @@ func _build_ui() -> void:
 	top.add_child(gold_label)
 	level_label = _label("", 30)
 	level_label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.9))
-	col.add_child(level_label)
+	top_col.add_child(level_label)
 
-	col.add_child(_spacer(40))
+	col.add_child(_spacer(20))
 	enemy_row = _row()
 	col.add_child(enemy_row)
 
@@ -179,11 +201,19 @@ func _build_ui() -> void:
 	actions.add_child(upgrade_button)
 	start_button = _button("В бой!", _on_start)
 	start_button.custom_minimum_size = Vector2(440, 110)
+	start_button.add_theme_font_size_override("font_size", 42)
+	Fx.gold_styles(start_button)
 	actions.add_child(start_button)
+
+	fx_layer = Control.new()
+	fx_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	fx_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(fx_layer)
 
 	_build_story_panel()
 	_build_squad_panel()
 	_build_quests_panel()
+	_build_title()
 
 
 func _build_story_panel() -> void:
@@ -193,11 +223,7 @@ func _build_story_panel() -> void:
 	story_panel.offset_bottom = -40
 	story_panel.offset_left = 32
 	story_panel.offset_right = -32
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.05, 0.04, 0.1, 0.95)
-	style.border_color = Color(1, 0.82, 0.45)
-	style.set_border_width_all(4)
-	style.set_corner_radius_all(24)
+	var style := Fx.panel_style(Color(1, 0.82, 0.45), 0.96)
 	style.set_content_margin_all(36)
 	story_panel.add_theme_stylebox_override("panel", style)
 	story_panel.gui_input.connect(func(e):
@@ -231,6 +257,59 @@ func _build_story_panel() -> void:
 	story_panel.hide()
 
 
+## Title screen over the living backdrop; a tap anywhere starts the game.
+func _build_title() -> void:
+	title_screen = Control.new()
+	title_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(title_screen)
+	var sky := Fx.make_backdrop()
+	Fx.set_palette(sky, 3, false)
+	title_screen.add_child(sky)
+	title_screen.add_child(Fx.make_embers())
+	var v := VBoxContainer.new()
+	v.set_anchors_preset(Control.PRESET_FULL_RECT)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 18)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_screen.add_child(v)
+	for t in [["ХРОНИКИ", 64, Color(0.85, 0.8, 1.0)], ["Звёздного Пепла", 104, Color(1, 0.85, 0.45)]]:
+		var l := _label(t[0], t[1])
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.add_theme_color_override("font_color", t[2])
+		l.add_theme_color_override("font_outline_color", Color(0.3, 0.12, 0.45))
+		l.add_theme_constant_override("outline_size", 20)
+		v.add_child(l)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 10)
+	v.add_child(row)
+	for id in ["akira", "ryu", "yuki", "kae"]:
+		var c := Chibi.new()
+		c.setup(id)
+		c.custom_minimum_size = Vector2(230, 230)
+		row.add_child(c)
+	v.add_child(_spacer(80))
+	var tap := _label("Нажмите, чтобы начать", 44)
+	tap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(tap)
+	var pulse := tap.create_tween().set_loops()
+	pulse.tween_property(tap, "modulate:a", 0.25, 0.9)
+	pulse.tween_property(tap, "modulate:a", 1.0, 0.9)
+	var ver := _label("Аниме-RPG с автобоем · версия " + GAME_VERSION, 26)
+	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ver.modulate.a = 0.6
+	v.add_child(ver)
+	title_screen.gui_input.connect(func(e):
+		if e is InputEventMouseButton and e.pressed and title_screen.mouse_filter == Control.MOUSE_FILTER_STOP:
+			title_screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			if not pending_card.is_empty():
+				Fx.title_card(fx_layer, pending_card[0], pending_card[1])
+				pending_card = []
+			var tw := title_screen.create_tween()
+			tw.tween_property(title_screen, "modulate:a", 0.0, 0.5)
+			tw.tween_callback(title_screen.queue_free))
+
+
 func _make_card(u: Unit) -> Control:
 	var box := VBoxContainer.new()
 	box.custom_minimum_size = Vector2(CARD_W, 0)
@@ -239,6 +318,15 @@ func _make_card(u: Unit) -> Control:
 	var holder := Control.new()
 	holder.custom_minimum_size = Vector2(CARD_W, SPRITE + 40)
 	box.add_child(holder)
+	# Glowing element-coloured platform under the fighter.
+	var aura := TextureRect.new()
+	aura.texture = Fx.glow_texture()
+	aura.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	aura.stretch_mode = TextureRect.STRETCH_SCALE
+	aura.size = Vector2(CARD_W - 10, 70)
+	aura.position = Vector2(5, SPRITE + 40 - 52)
+	aura.modulate = Color(Fx.element_color(u.element), 0.75)
+	holder.add_child(aura)
 	var sprite := Chibi.new()
 	sprite.setup(u.id)
 	var d := SPRITE * (1.25 if u.role == "boss" else 1.0)
@@ -251,9 +339,12 @@ func _make_card(u: Unit) -> Control:
 	box.add_child(name_label)
 	var hp := _bar(Color(0.35, 0.9, 0.45), 22)
 	box.add_child(hp)
+	if u.role == "boss":
+		hp.custom_minimum_size.x = CARD_W
 	var en := _bar(Color(0.4, 0.7, 1.0), 10)
 	box.add_child(en)
-	cards[u] = {"box": box, "sprite": sprite, "base_y": sprite.position.y, "hp": hp, "en": en}
+	cards[u] = {"box": box, "sprite": sprite, "base_y": sprite.position.y, "hp": hp, "en": en,
+		"fill": hp.get_theme_stylebox("fill")}
 	return box
 
 
@@ -296,8 +387,21 @@ func _prepare_battle() -> void:
 	running = false
 	result_label.text = ""
 	start_button.text = "В бой!"
+	if mode == "story" and stage == 1:
+		result_label.text = "Нажмите «В бой!». Когда шкала энергии героя полна,\nнажмите его имя внизу — это ультимейт."
+		result_label.add_theme_color_override("font_color", Color(0.8, 0.8, 1.0))
+	var key = "tower" if mode == "tower" else clampi((stage - 1) / 10 + 1, 1, 3)
+	if key != palette_key:
+		Fx.set_palette(backdrop, key, palette_key != 0)
+		palette_key = key
 	_refresh_top()
 	_refresh_units()
+	if mode == "story" and stage > story_seen and stage % 10 == 1 and Data.CHAPTERS.has(stage / 10 + 1):
+		var ch: Array = Data.CHAPTERS[stage / 10 + 1]
+		if is_instance_valid(title_screen):
+			pending_card = ch
+		else:
+			Fx.title_card(fx_layer, ch[0], ch[1])
 	if mode == "story" and stage > story_seen and Data.story().has(stage):
 		_show_story(Data.story()[stage])
 	story_seen = maxi(story_seen, stage)
@@ -317,6 +421,7 @@ func _on_start() -> void:
 
 func _on_ended(win: bool) -> void:
 	running = false
+	var after: Array = []
 	_refresh_units()
 	if win and mode == "tower":
 		_on_tower_win()
@@ -337,11 +442,15 @@ func _on_ended(win: bool) -> void:
 			crystals += Summon.stage_crystals(stage)
 			result_label.text += "\nКристаллы +%d" % Summon.stage_crystals(stage)
 		result_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3))
+		_victory_fx()
+		after = Data.story_after().get(stage, [])
 		stage += 1
 		start_button.text = "Дальше"
 	else:
 		result_label.text = "Поражение"
 		result_label.add_theme_color_override("font_color", Color(1, 0.4, 0.4))
+		Fx.flash(fx_layer, Color(0.8, 0.1, 0.15), 0.4)
+		shake = 18.0
 		start_button.text = "Ещё раз"
 	start_button.disabled = false
 	upgrade_button.disabled = false
@@ -349,6 +458,8 @@ func _on_ended(win: bool) -> void:
 	summon_button.disabled = false
 	_refresh_top()
 	_save()
+	if not after.is_empty():
+		_show_story(after)
 
 
 func _on_tower_win() -> void:
@@ -368,6 +479,7 @@ func _on_tower_win() -> void:
 		crystals += Summon.tower_crystals(tower_floor)
 		result_label.text += "\nКристаллы +%d" % Summon.tower_crystals(tower_floor)
 	result_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3))
+	_victory_fx()
 	tower_floor += 1
 	start_button.text = "Выше"
 
@@ -399,13 +511,19 @@ func _on_acted(actor: Unit, target: Unit, amount: float, kind: String) -> void:
 		"hit":
 			_flash(target)
 			_float_text(target, str(int(amount)), Color.WHITE)
+			_spark(target, Fx.element_color(actor.element), 10, 1.0)
 		"crit":
 			_flash(target)
 			_float_text(target, "%d!" % int(amount), Color(1, 0.6, 0.2))
+			_spark(target, Fx.element_color(actor.element), 26, 1.4)
+			_ring(target, Color(1, 0.75, 0.3))
+			shake = maxf(shake, 14.0)
 		"heal":
 			_float_text(target, "+%d" % int(amount), Color(0.4, 1, 0.5))
+			_spark(target, Color(0.4, 1, 0.55), 12, 0.7)
 		"shield":
 			_float_text(target, "Щит", Color(0.5, 0.8, 1))
+			_ring(target, Color(0.5, 0.8, 1))
 
 
 func _on_ult(actor: Unit) -> void:
@@ -418,6 +536,17 @@ func _on_ult(actor: Unit) -> void:
 	var tw := create_tween()
 	tw.tween_property(s, "scale", Vector2(1.3, 1.3), 0.12)
 	tw.tween_property(s, "scale", Vector2.ONE, 0.18)
+	var color := Fx.element_color(actor.element)
+	_ring(actor, color)
+	_spark(actor, color, 30, 1.2)
+	Fx.flash(fx_layer, color, 0.3)
+	shake = maxf(shake, 10.0)
+	if actor.is_hero and not cut_in_active:
+		cut_in_active = true
+		var portrait := Chibi.new()
+		portrait.setup(actor.id)
+		var stripe := Fx.cut_in(fx_layer, portrait, actor.name, actor.id, color)
+		stripe.tree_exited.connect(func(): cut_in_active = false)
 
 
 func _upgrade() -> void:
@@ -445,11 +574,7 @@ func _build_squad_panel() -> void:
 	squad_panel.offset_right = -32
 	squad_panel.offset_top = 140
 	squad_panel.offset_bottom = -140
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.05, 0.04, 0.1, 0.97)
-	style.border_color = Color(0.5, 0.7, 1.0)
-	style.set_border_width_all(4)
-	style.set_corner_radius_all(24)
+	var style := Fx.panel_style(Color(0.5, 0.7, 1.0), 0.96)
 	style.set_content_margin_all(36)
 	squad_panel.add_theme_stylebox_override("panel", style)
 	add_child(squad_panel)
@@ -612,11 +737,7 @@ func _build_quests_panel() -> void:
 	quests_panel.offset_right = -32
 	quests_panel.offset_top = 300
 	quests_panel.offset_bottom = -300
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.05, 0.04, 0.1, 0.97)
-	style.border_color = Color(1, 0.82, 0.45)
-	style.set_border_width_all(4)
-	style.set_corner_radius_all(24)
+	var style := Fx.panel_style(Color(1, 0.82, 0.45), 0.96)
 	style.set_content_margin_all(36)
 	quests_panel.add_theme_stylebox_override("panel", style)
 	add_child(quests_panel)
@@ -712,6 +833,8 @@ func _refresh_units() -> void:
 	for u in cards:
 		var c: Dictionary = cards[u]
 		c["hp"].value = u.hp / u.max_hp * 100.0
+		var ratio: float = u.hp / u.max_hp
+		c["fill"].bg_color = Color(0.95, 0.3, 0.3).lerp(Color(1, 0.8, 0.3), clampf(ratio * 2.0, 0, 1)).lerp(Color(0.35, 0.9, 0.45), clampf(ratio * 2.0 - 1.0, 0, 1))
 		c["en"].value = u.energy
 		c["box"].modulate.a = 1.0 if u.alive() else 0.3
 		c["sprite"].self_modulate = Color(0.7, 0.85, 1.0) if u.shield > 0 else Color.WHITE
@@ -720,7 +843,15 @@ func _refresh_units() -> void:
 		var b: Button = e["button"]
 		b.disabled = not (running and u.ult_ready())
 		b.text = "УЛЬТ!" if u.ult_ready() else u.name
-		b.add_theme_color_override("font_color", Color(1, 0.85, 0.3) if u.ult_ready() else Color.WHITE)
+		var gold := u.ult_ready() and running
+		if ult_gold.get(b, false) != gold:
+			ult_gold[b] = gold
+			if gold:
+				Fx.gold_styles(b)
+			else:
+				for st in ["normal", "hover", "pressed"]:
+					b.remove_theme_stylebox_override(st)
+				b.remove_theme_color_override("font_color")
 
 
 func _bump(u: Unit) -> void:
@@ -741,6 +872,30 @@ func _flash(u: Unit) -> void:
 	create_tween().tween_property(s, "modulate", Color.WHITE, 0.2 / speed)
 
 
+func _center(u: Unit) -> Vector2:
+	var s: Control = cards[u]["sprite"]
+	return s.global_position + s.size / 2
+
+
+func _spark(u: Unit, color: Color, amount: int, power: float) -> void:
+	if cards.has(u):
+		Fx.burst(fx_layer, _center(u), color, amount, power)
+
+
+func _ring(u: Unit, color: Color) -> void:
+	if cards.has(u):
+		Fx.ring(fx_layer, _center(u), color)
+
+
+func _victory_fx() -> void:
+	var center := result_label.global_position + result_label.size / 2
+	Fx.burst(fx_layer, center, Color(1, 0.85, 0.35), 70, 2.0)
+	Fx.ring(fx_layer, center, Color(1, 0.85, 0.35), 90)
+	result_label.pivot_offset = result_label.size / 2
+	result_label.scale = Vector2(0.4, 0.4)
+	create_tween().tween_property(result_label, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
 func _float_text(u: Unit, text: String, color: Color) -> void:
 	if not cards.has(u):
 		return
@@ -749,7 +904,7 @@ func _float_text(u: Unit, text: String, color: Color) -> void:
 	l.add_theme_color_override("font_color", color)
 	l.add_theme_color_override("font_outline_color", Color.BLACK)
 	l.add_theme_constant_override("outline_size", 8)
-	add_child(l)
+	fx_layer.add_child(l)
 	l.global_position = s.global_position + Vector2(s.size.x / 2 - 30 + randf_range(-20, 20), -10)
 	var tw := create_tween()
 	tw.tween_property(l, "position:y", l.position.y - 110, 0.7 / speed)
