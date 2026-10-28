@@ -5,11 +5,14 @@ const Data = preload("res://data.gd")
 const Unit = preload("res://unit.gd")
 const Battle = preload("res://battle.gd")
 const Equipment = preload("res://equipment.gd")
+const Chibi = preload("res://chibi.gd")
 
 const SAVE_PATH := "user://save.cfg"
 const IDLE_CAP_SEC := 12 * 3600
 const CARD_W := 230.0
-const SPRITE := 150.0
+const SPRITE := 185.0
+const SPEAKER_IDS := {"Акира": "akira", "Рю": "ryu", "Юки": "yuki", "Каэ": "kae",
+	"Генерал Сара": "sara", "Вальдрам": "valdram", "Страж руин": "guardian"}
 
 var stage := 1
 var gold := 0
@@ -40,6 +43,7 @@ var auto_button: CheckButton
 var story_panel: PanelContainer
 var story_speaker: Label
 var story_text: Label
+var story_portrait: Control
 var squad_panel: PanelContainer
 var squad_list: VBoxContainer
 
@@ -166,9 +170,15 @@ func _build_story_panel() -> void:
 	v.add_theme_constant_override("separation", 20)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	story_panel.add_child(v)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 24)
+	v.add_child(head)
+	story_portrait = Chibi.new()
+	story_portrait.custom_minimum_size = Vector2(150, 150)
+	head.add_child(story_portrait)
 	story_speaker = _label("", 40)
 	story_speaker.add_theme_color_override("font_color", Color(1, 0.82, 0.45))
-	v.add_child(story_speaker)
+	head.add_child(story_speaker)
 	story_text = _label("", 36)
 	story_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	story_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -190,23 +200,12 @@ func _make_card(u: Unit) -> Control:
 	var holder := Control.new()
 	holder.custom_minimum_size = Vector2(CARD_W, SPRITE + 40)
 	box.add_child(holder)
-	var sprite := Panel.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = u.color
-	style.border_color = Color.WHITE if u.role != "boss" else Color(1, 0.3, 0.3)
-	style.set_border_width_all(4)
-	style.set_corner_radius_all(int(SPRITE / 2))
-	sprite.add_theme_stylebox_override("panel", style)
+	var sprite := Chibi.new()
+	sprite.setup(u.id)
 	var d := SPRITE * (1.25 if u.role == "boss" else 1.0)
 	sprite.size = Vector2(d, d)
 	sprite.position = Vector2((CARD_W - d) / 2, 20 if u.role != "boss" else 0)
 	holder.add_child(sprite)
-	var initial := _label(u.name.substr(0, 1), 72)
-	initial.add_theme_color_override("font_color", Color(0, 0, 0, 0.55))
-	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	initial.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	initial.set_anchors_preset(Control.PRESET_FULL_RECT)
-	sprite.add_child(initial)
 
 	var name_label := _label("%s · %s" % [u.name, Data.ELEMENT_NAMES[u.element]], 26)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -438,6 +437,9 @@ func _next_story_line() -> void:
 	var line: Array = story_lines.pop_front()
 	story_speaker.text = line[0]
 	story_text.text = line[1]
+	story_portrait.visible = SPEAKER_IDS.has(line[0])
+	if story_portrait.visible:
+		story_portrait.setup(SPEAKER_IDS[line[0]])
 
 
 # --- Visual helpers ---
