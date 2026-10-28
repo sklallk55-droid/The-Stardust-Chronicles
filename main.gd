@@ -11,16 +11,18 @@ const Ascension = preload("res://ascension.gd")
 const Summon = preload("res://summon.gd")
 const Levels = preload("res://levels.gd")
 const Fx = preload("res://fx.gd")
+const Sfx = preload("res://sfx.gd")
 
 const SAVE_PATH := "user://save.cfg"
 const IDLE_CAP_SEC := 12 * 3600
 const CARD_W := 230.0
 const SPRITE := 185.0
 const SQUAD_SIZE := 4
-const GAME_VERSION := "1.0"
+const GAME_VERSION := "1.1"
 const SPEAKER_IDS := {"Акира": "akira", "Рю": "ryu", "Юки": "yuki", "Каэ": "kae",
 	"Генерал Сара": "sara", "Вальдрам": "valdram", "Страж руин": "guardian",
-	"Рэн": "ren", "Мира": "mira", "Тэцуо": "tetsuo", "Иса": "isa"}
+	"Рэн": "ren", "Мира": "mira", "Тэцуо": "tetsuo", "Иса": "isa",
+	"Сара": "sara", "Нокт": "noct", "Пожиратель памяти": "eater", "Чёрная звезда": "blackstar"}
 
 var stage := 1
 var gold := 0
@@ -78,11 +80,15 @@ var cut_in_active := false
 var ult_gold := {}  # Button -> bool, whether the gold style is on
 var title_screen: Control
 var pending_card: Array = []  # chapter title waiting for the title screen to close
+var sfx: Sfx
+var sound_button: Button
 
 
 func _ready() -> void:
 	theme = Fx.make_theme()
 	rng.randomize()
+	sfx = Sfx.new()
+	add_child(sfx)
 	_build_ui()
 	_load()
 	quest_state = Quests.current(quest_state)
@@ -177,6 +183,8 @@ func _build_ui() -> void:
 	var squad_button := _button("Отряд", _show_squad)
 	squad_button.custom_minimum_size.x = 200
 	controls.add_child(squad_button)
+	sound_button = _button("Звук", _toggle_sound)
+	controls.add_child(sound_button)
 
 	var modes := HBoxContainer.new()
 	modes.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -390,7 +398,7 @@ func _prepare_battle() -> void:
 	if mode == "story" and stage == 1:
 		result_label.text = "Нажмите «В бой!». Когда шкала энергии героя полна,\nнажмите его имя внизу — это ультимейт."
 		result_label.add_theme_color_override("font_color", Color(0.8, 0.8, 1.0))
-	var key = "tower" if mode == "tower" else clampi((stage - 1) / 10 + 1, 1, 3)
+	var key = "tower" if mode == "tower" else clampi((stage - 1) / 10 + 1, 1, 6)
 	if key != palette_key:
 		Fx.set_palette(backdrop, key, palette_key != 0)
 		palette_key = key
@@ -444,12 +452,16 @@ func _on_ended(win: bool) -> void:
 		result_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3))
 		_victory_fx()
 		after = Data.story_after().get(stage, [])
+		if stage == Data.SARA_JOIN_STAGE and not owned.has("sara"):
+			owned.append("sara")
+			result_label.text += "\nСара вступила в отряд!"
 		stage += 1
 		start_button.text = "Дальше"
 	else:
 		result_label.text = "Поражение"
 		result_label.add_theme_color_override("font_color", Color(1, 0.4, 0.4))
 		Fx.flash(fx_layer, Color(0.8, 0.1, 0.15), 0.4)
+		sfx.play("defeat")
 		shake = 18.0
 		start_button.text = "Ещё раз"
 	start_button.disabled = false
@@ -509,19 +521,23 @@ func _on_acted(actor: Unit, target: Unit, amount: float, kind: String) -> void:
 	_bump(actor)
 	match kind:
 		"hit":
+			sfx.play("hit")
 			_flash(target)
 			_float_text(target, str(int(amount)), Color.WHITE)
 			_spark(target, Fx.element_color(actor.element), 10, 1.0)
 		"crit":
+			sfx.play("crit")
 			_flash(target)
 			_float_text(target, "%d!" % int(amount), Color(1, 0.6, 0.2))
 			_spark(target, Fx.element_color(actor.element), 26, 1.4)
 			_ring(target, Color(1, 0.75, 0.3))
 			shake = maxf(shake, 14.0)
 		"heal":
+			sfx.play("heal")
 			_float_text(target, "+%d" % int(amount), Color(0.4, 1, 0.5))
 			_spark(target, Color(0.4, 1, 0.55), 12, 0.7)
 		"shield":
+			sfx.play("shield")
 			_float_text(target, "Щит", Color(0.5, 0.8, 1))
 			_ring(target, Color(0.5, 0.8, 1))
 
@@ -537,6 +553,7 @@ func _on_ult(actor: Unit) -> void:
 	tw.tween_property(s, "scale", Vector2(1.3, 1.3), 0.12)
 	tw.tween_property(s, "scale", Vector2.ONE, 0.18)
 	var color := Fx.element_color(actor.element)
+	sfx.play("ult")
 	_ring(actor, color)
 	_spark(actor, color, 30, 1.2)
 	Fx.flash(fx_layer, color, 0.3)
@@ -558,6 +575,12 @@ func _upgrade() -> void:
 	Quests.add(quest_state, "upgrade")
 	_save()
 	_prepare_battle()
+
+
+func _toggle_sound() -> void:
+	sfx.set_enabled(not sfx.enabled)
+	sound_button.modulate.a = 1.0 if sfx.enabled else 0.45
+	_save()
 
 
 func _toggle_speed() -> void:
@@ -888,6 +911,7 @@ func _ring(u: Unit, color: Color) -> void:
 
 
 func _victory_fx() -> void:
+	sfx.play("victory")
 	var center := result_label.global_position + result_label.size / 2
 	Fx.burst(fx_layer, center, Color(1, 0.85, 0.35), 70, 2.0)
 	Fx.ring(fx_layer, center, Color(1, 0.85, 0.35), 90)
@@ -924,6 +948,7 @@ func _button(text: String, cb: Callable) -> Button:
 	b.text = text
 	b.custom_minimum_size = Vector2(0, 90)
 	b.pressed.connect(cb)
+	b.pressed.connect(func(): sfx.play("click"))
 	return b
 
 
@@ -975,6 +1000,7 @@ func _save() -> void:
 	cfg.set_value("summon", "squad", squad)
 	cfg.set_value("levels", "level", hero_levels)
 	cfg.set_value("levels", "xp", hero_xp)
+	cfg.set_value("player", "sound", sfx.enabled)
 	cfg.set_value("player", "last_seen", int(Time.get_unix_time_from_system()))
 	cfg.save(SAVE_PATH)
 
@@ -998,6 +1024,8 @@ func _load() -> void:
 	squad = cfg.get_value("summon", "squad", squad)
 	hero_levels = cfg.get_value("levels", "level", {})
 	hero_xp = cfg.get_value("levels", "xp", {})
+	if not cfg.get_value("player", "sound", true):
+		_toggle_sound()
 	var away := int(Time.get_unix_time_from_system()) - int(cfg.get_value("player", "last_seen", 0))
 	away = clampi(away, 0, IDLE_CAP_SEC)
 	var idle_gold := int(away / 60.0 * Data.idle_gold_per_min(maxi(1, stage - 1)))
