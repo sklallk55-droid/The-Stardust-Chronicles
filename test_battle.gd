@@ -33,6 +33,7 @@ func _init() -> void:
 	failures += _test_ascension()
 	failures += _test_summon()
 	failures += _test_levels()
+	failures += _test_kits()
 	quit(1 if failures > 0 else 0)
 
 
@@ -208,4 +209,34 @@ func _test_levels() -> int:
 	if wins[1] <= wins[0]:
 		print("FAIL: personal levels should help")
 		errors += 1
+	return errors
+
+
+## Every hero kit and boss ability runs without errors and statuses really get applied.
+func _test_kits() -> int:
+	var errors := 0
+	var seen := {}
+	var squads := [["akira", "ryu", "yuki", "kae"], ["sara", "ren", "mira", "isa"], ["tetsuo", "isa", "mira", "kae"]]
+	for squad in squads:
+		for stage in [10, 20, 30, 40, 50, 60]:
+			var heroes := []
+			for d in Data.heroes_by_ids(squad):
+				heroes.append(Unit.new(d, true, Data.hero_power(stage / 2)))
+			var enemies := []
+			for d in Data.stage_enemies(stage):
+				enemies.append(Unit.new(d, false, Data.enemy_power(stage)))
+			var b := Battle.new(heroes, enemies, stage)
+			b.status.connect(func(_u, type): seen[type] = true)
+			b.acted.connect(func(_a, _t, _n, kind): seen[kind] = true)
+			b.auto_ult = true
+			while not b.finished:
+				b.step()
+	for need in ["burn", "poison", "freeze", "def_down", "atk_up", "regen", "taunt", "thorns", "enrage", "dot_burn", "dot_poison", "drain", "shield", "heal"]:
+		if not seen.has(need):
+			print("kit never triggered: ", need)
+			errors += 1
+	var res := Battle.new([Unit.new(Data.heroes()[0], true), Unit.new(Data.summon_heroes()[1], true)], [Unit.new(Data.enemies()[0], false)], 1).resonance
+	if res.get("light", 0.0) != 0.1:
+		errors += 1
+	print("kit errors: %d, revive seen: %s" % [errors, seen.has("revive")])
 	return errors

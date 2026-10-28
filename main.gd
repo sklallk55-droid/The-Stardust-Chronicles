@@ -15,10 +15,13 @@ const Sfx = preload("res://sfx.gd")
 
 const SAVE_PATH := "user://save.cfg"
 const IDLE_CAP_SEC := 12 * 3600
-const CARD_W := 230.0
-const SPRITE := 185.0
+const CARD_W := 240.0
+const SPRITE := 275.0
+const ICONS := preload("res://art_icons.png")
+const BACKGROUNDS := {1: "res://bg_ch1.jpg", 2: "res://bg_ch2.jpg", 3: "res://bg_ch3.jpg", 4: "res://bg_ch4.jpg",
+	5: "res://bg_ch5.jpg", 6: "res://bg_ch6.jpg", "tower": "res://bg_tower.jpg"}
 const SQUAD_SIZE := 4
-const GAME_VERSION := "1.1"
+const GAME_VERSION := "1.2"
 const SPEAKER_IDS := {"Акира": "akira", "Рю": "ryu", "Юки": "yuki", "Каэ": "kae",
 	"Генерал Сара": "sara", "Вальдрам": "valdram", "Страж руин": "guardian",
 	"Рэн": "ren", "Мира": "mira", "Тэцуо": "tetsuo", "Иса": "isa",
@@ -72,6 +75,8 @@ var summon_button: Button
 var quests_panel: PanelContainer
 var quests_list: VBoxContainer
 var backdrop: ColorRect
+var scene_bg: TextureRect
+var resonance_label: Label
 var palette_key = 0
 var shake_root: Control
 var shake := 0.0
@@ -115,6 +120,9 @@ func _notification(what: int) -> void:
 func _build_ui() -> void:
 	backdrop = Fx.make_backdrop()
 	add_child(backdrop)
+	scene_bg = _cover_image(BACKGROUNDS[1])
+	add_child(scene_bg)
+	add_child(_shade_overlay())
 	add_child(Fx.make_embers())
 
 	var margin := MarginContainer.new()
@@ -127,7 +135,7 @@ func _build_ui() -> void:
 	shake_root = margin
 
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 24)
+	col.add_theme_constant_override("separation", 14)
 	margin.add_child(col)
 
 	var top_panel := PanelContainer.new()
@@ -151,14 +159,13 @@ func _build_ui() -> void:
 	level_label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.9))
 	top_col.add_child(level_label)
 
-	col.add_child(_spacer(20))
 	enemy_row = _row()
 	col.add_child(enemy_row)
 
 	var middle := CenterContainer.new()
 	middle.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(middle)
-	result_label = _label("", 56)
+	result_label = _label("", 48)
 	result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	result_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	result_label.custom_minimum_size.x = 960
@@ -166,7 +173,12 @@ func _build_ui() -> void:
 
 	hero_row = _row()
 	col.add_child(hero_row)
-	col.add_child(_spacer(16))
+	resonance_label = _label("", 28)
+	resonance_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	resonance_label.add_theme_color_override("font_color", Color(1, 0.9, 0.55))
+	resonance_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	resonance_label.add_theme_constant_override("outline_size", 6)
+	col.add_child(resonance_label)
 	ult_row = _row()
 	col.add_child(ult_row)
 
@@ -247,7 +259,7 @@ func _build_story_panel() -> void:
 	head.add_theme_constant_override("separation", 24)
 	v.add_child(head)
 	story_portrait = Chibi.new()
-	story_portrait.custom_minimum_size = Vector2(150, 150)
+	story_portrait.custom_minimum_size = Vector2(170, 170)
 	head.add_child(story_portrait)
 	story_speaker = _label("", 40)
 	story_speaker.add_theme_color_override("font_color", Color(1, 0.82, 0.45))
@@ -273,6 +285,7 @@ func _build_title() -> void:
 	var sky := Fx.make_backdrop()
 	Fx.set_palette(sky, 3, false)
 	title_screen.add_child(sky)
+	title_screen.add_child(_cover_image("res://bg_title.jpg"))
 	title_screen.add_child(Fx.make_embers())
 	var v := VBoxContainer.new()
 	v.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -291,10 +304,11 @@ func _build_title() -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 10)
 	v.add_child(row)
+	row.add_theme_constant_override("separation", -50)
 	for id in ["akira", "ryu", "yuki", "kae"]:
 		var c := Chibi.new()
 		c.setup(id)
-		c.custom_minimum_size = Vector2(230, 230)
+		c.custom_minimum_size = Vector2(310, 310)
 		row.add_child(c)
 	v.add_child(_spacer(80))
 	var tap := _label("Нажмите, чтобы начать", 44)
@@ -323,23 +337,25 @@ func _make_card(u: Unit) -> Control:
 	box.custom_minimum_size = Vector2(CARD_W, 0)
 	box.add_theme_constant_override("separation", 6)
 
+	var boss := u.role == "boss"
+	var d := SPRITE * (1.3 if boss else 1.0)
 	var holder := Control.new()
-	holder.custom_minimum_size = Vector2(CARD_W, SPRITE + 40)
+	holder.custom_minimum_size = Vector2(CARD_W, d - 30)
 	box.add_child(holder)
 	# Glowing element-coloured platform under the fighter.
 	var aura := TextureRect.new()
 	aura.texture = Fx.glow_texture()
 	aura.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	aura.stretch_mode = TextureRect.STRETCH_SCALE
-	aura.size = Vector2(CARD_W - 10, 70)
-	aura.position = Vector2(5, SPRITE + 40 - 52)
-	aura.modulate = Color(Fx.element_color(u.element), 0.75)
+	aura.size = Vector2(d * 0.8, 60)
+	aura.position = Vector2((CARD_W - d * 0.8) / 2, d - 30 - 62)
+	aura.modulate = Color(Fx.element_color(u.element), 0.6)
 	holder.add_child(aura)
 	var sprite := Chibi.new()
 	sprite.setup(u.id)
-	var d := SPRITE * (1.25 if u.role == "boss" else 1.0)
+	sprite.flip = not u.is_hero and Chibi.HERO_IDS.has(u.id)
 	sprite.size = Vector2(d, d)
-	sprite.position = Vector2((CARD_W - d) / 2, 20 if u.role != "boss" else 0)
+	sprite.position = Vector2((CARD_W - d) / 2, -30)
 	holder.add_child(sprite)
 
 	var name_label := _label("%s · %s" % [u.name, Data.ELEMENT_NAMES[u.element]], 26)
@@ -351,8 +367,13 @@ func _make_card(u: Unit) -> Control:
 		hp.custom_minimum_size.x = CARD_W
 	var en := _bar(Color(0.4, 0.7, 1.0), 10)
 	box.add_child(en)
+	var icons := HBoxContainer.new()
+	icons.alignment = BoxContainer.ALIGNMENT_CENTER
+	icons.add_theme_constant_override("separation", 4)
+	icons.custom_minimum_size.y = 40
+	box.add_child(icons)
 	cards[u] = {"box": box, "sprite": sprite, "base_y": sprite.position.y, "hp": hp, "en": en,
-		"fill": hp.get_theme_stylebox("fill")}
+		"fill": hp.get_theme_stylebox("fill"), "icons": icons, "icon_key": ""}
 	return box
 
 
@@ -381,6 +402,7 @@ func _prepare_battle() -> void:
 	battle = Battle.new(hero_units, enemy_units)
 	battle.acted.connect(_on_acted)
 	battle.ult_used.connect(_on_ult)
+	battle.status.connect(_on_status)
 	battle.ended.connect(_on_ended)
 
 	for u in enemy_units:
@@ -389,6 +411,9 @@ func _prepare_battle() -> void:
 		hero_row.add_child(_make_card(u))
 		var b := _button(u.name, func(): battle.use_ult(u))
 		b.custom_minimum_size = Vector2(CARD_W, 100)
+		b.icon = _portrait_icon(u.id)
+		b.expand_icon = true
+		b.add_theme_constant_override("icon_max_width", 76)
 		ult_row.add_child(b)
 		ult_buttons.append({"unit": u, "button": b})
 
@@ -401,7 +426,12 @@ func _prepare_battle() -> void:
 	var key = "tower" if mode == "tower" else clampi((stage - 1) / 10 + 1, 1, 6)
 	if key != palette_key:
 		Fx.set_palette(backdrop, key, palette_key != 0)
+		_set_scene(key, palette_key != 0)
 		palette_key = key
+	var res := []
+	for el in battle.resonance:
+		res.append("%s +%d%%" % [Data.ELEMENT_NAMES[el], int(round(battle.resonance[el] * 100))])
+	resonance_label.text = "Резонанс стихий: " + ", ".join(res) + " к атаке" if not res.is_empty() else ""
 	_refresh_top()
 	_refresh_units()
 	if mode == "story" and stage > story_seen and stage % 10 == 1 and Data.CHAPTERS.has(stage / 10 + 1):
@@ -518,8 +548,22 @@ func _toggle_tower() -> void:
 
 
 func _on_acted(actor: Unit, target: Unit, amount: float, kind: String) -> void:
-	_bump(actor)
+	if kind in ["hit", "crit", "heal", "shield"] and actor != target:
+		_bump(actor)
+		if cards.has(actor):
+			cards[actor]["sprite"].play_attack(0.35 / speed)
 	match kind:
+		"dot_burn":
+			_float_text(target, str(int(amount)), Color(1, 0.6, 0.25), 34)
+		"dot_poison":
+			_float_text(target, str(int(amount)), Color(0.55, 0.95, 0.35), 34)
+		"drain":
+			_float_text(target, "+%d" % int(amount), Color(0.75, 0.5, 1), 32)
+		"revive":
+			sfx.play("ult")
+			_float_text(target, "Воскрешение!", Color(1, 0.9, 0.5))
+			_ring(target, Color(1, 0.9, 0.5))
+			_spark(target, Color(1, 0.95, 0.7), 30, 1.2)
 		"hit":
 			sfx.play("hit")
 			_flash(target)
@@ -533,6 +577,8 @@ func _on_acted(actor: Unit, target: Unit, amount: float, kind: String) -> void:
 			_ring(target, Color(1, 0.75, 0.3))
 			shake = maxf(shake, 14.0)
 		"heal":
+			if amount < 1.0:
+				return
 			sfx.play("heal")
 			_float_text(target, "+%d" % int(amount), Color(0.4, 1, 0.5))
 			_spark(target, Color(0.4, 1, 0.55), 12, 0.7)
@@ -540,6 +586,19 @@ func _on_acted(actor: Unit, target: Unit, amount: float, kind: String) -> void:
 			sfx.play("shield")
 			_float_text(target, "Щит", Color(0.5, 0.8, 1))
 			_ring(target, Color(0.5, 0.8, 1))
+
+
+func _on_status(target: Unit, type: String) -> void:
+	if not cards.has(target):
+		return
+	var color: Color = Data.STATUS_COLORS.get(type, Color.WHITE)
+	_float_text(target, Data.STATUS_NAMES.get(type, type), color, 30 if type != "enrage" else 44)
+	if type == "enrage":
+		_ring(target, color)
+		shake = maxf(shake, 16.0)
+		sfx.play("crit")
+	elif type == "freeze":
+		_spark(target, color, 14, 0.8)
 
 
 func _on_ult(actor: Unit) -> void:
@@ -561,7 +620,7 @@ func _on_ult(actor: Unit) -> void:
 	if actor.is_hero and not cut_in_active:
 		cut_in_active = true
 		var portrait := Chibi.new()
-		portrait.setup(actor.id)
+		portrait.setup(actor.id, true)
 		var stripe := Fx.cut_in(fx_layer, portrait, actor.name, actor.id, color)
 		stripe.tree_exited.connect(func(): cut_in_active = false)
 
@@ -653,8 +712,17 @@ func _fill_squad() -> void:
 		Ascension.apply(u, hero_stars)
 		var hero_level: int = hero_levels.get(u.id, 1)
 		Levels.apply(u, hero_level)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 20)
+		var face := Chibi.new()
+		face.setup(u.id, true)
+		face.custom_minimum_size = Vector2(170, 170)
+		face.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		row.add_child(face)
 		var block := VBoxContainer.new()
 		block.add_theme_constant_override("separation", 4)
+		block.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(block)
 		var title := _label("%s · %s · звёзды %d/%d%s" % [u.name, Data.ELEMENT_NAMES[u.element], hero_stars, Ascension.MAX_STARS, " · в отряде" if in_squad else ""], 38)
 		title.add_theme_color_override("font_color", u.color)
 		block.add_child(title)
@@ -676,6 +744,13 @@ func _fill_squad() -> void:
 			var l := _label("   " + text, 28)
 			l.add_theme_color_override("font_color", color)
 			block.add_child(l)
+		if Data.SKILLS.has(u.id):
+			for i in 2:
+				var sk := _label(("Ульта · " if i == 0 else "Особенность · ") + Data.SKILLS[u.id][i], 28)
+				sk.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				sk.custom_minimum_size.x = 700
+				sk.add_theme_color_override("font_color", Color(1, 0.75, 0.45) if i == 0 else Color(0.75, 0.9, 1.0))
+				block.add_child(sk)
 		var passive := _label("   Пассивка (%d зв.): %s" % [Ascension.PASSIVE_STAR, Ascension.PASSIVES[u.id]], 28)
 		var passive_on := hero_stars >= Ascension.PASSIVE_STAR
 		passive.add_theme_color_override("font_color", Color(1, 0.85, 0.3) if passive_on else Color(0.6, 0.6, 0.7))
@@ -693,7 +768,7 @@ func _fill_squad() -> void:
 		pick.custom_minimum_size.x = 400
 		pick.disabled = (in_squad and squad.size() <= 1) or (not in_squad and squad.size() >= SQUAD_SIZE)
 		buttons.add_child(pick)
-		squad_list.add_child(block)
+		squad_list.add_child(row)
 	var bag := _label("В сумке: %d / %d" % [inventory.size(), Equipment.INVENTORY_CAP], 28)
 	bag.modulate = Color(1, 1, 1, 0.7)
 	squad_list.add_child(bag)
@@ -834,7 +909,7 @@ func _next_story_line() -> void:
 	story_text.text = line[1]
 	story_portrait.visible = SPEAKER_IDS.has(line[0])
 	if story_portrait.visible:
-		story_portrait.setup(SPEAKER_IDS[line[0]])
+		story_portrait.setup(SPEAKER_IDS[line[0]], true)
 
 
 # --- Visual helpers ---
@@ -860,7 +935,13 @@ func _refresh_units() -> void:
 		c["fill"].bg_color = Color(0.95, 0.3, 0.3).lerp(Color(1, 0.8, 0.3), clampf(ratio * 2.0, 0, 1)).lerp(Color(0.35, 0.9, 0.45), clampf(ratio * 2.0 - 1.0, 0, 1))
 		c["en"].value = u.energy
 		c["box"].modulate.a = 1.0 if u.alive() else 0.3
-		c["sprite"].self_modulate = Color(0.7, 0.85, 1.0) if u.shield > 0 else Color.WHITE
+		c["sprite"].self_modulate = Color(0.7, 0.85, 1.0) if u.shield > 0 else (Color(0.75, 0.9, 1.3) if u.stunned() else Color.WHITE)
+		var key := ""
+		for e in u.effects:
+			key += e["type"] + str(e["stacks"])
+		if key != c["icon_key"]:
+			c["icon_key"] = key
+			_fill_status_icons(c["icons"], u)
 	for e in ult_buttons:
 		var u: Unit = e["unit"]
 		var b: Button = e["button"]
@@ -875,6 +956,83 @@ func _refresh_units() -> void:
 				for st in ["normal", "hover", "pressed"]:
 					b.remove_theme_stylebox_override(st)
 				b.remove_theme_color_override("font_color")
+
+
+func _fill_status_icons(row: HBoxContainer, u: Unit) -> void:
+	for ch in row.get_children():
+		ch.queue_free()
+	for e in u.effects:
+		var i := Data.STATUS_ICONS.find(e["type"])
+		if i < 0:
+			continue
+		var icon := TextureRect.new()
+		icon.texture = _atlas(ICONS, Rect2(i * 64, 0, 64, 64))
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.custom_minimum_size = Vector2(38, 38)
+		row.add_child(icon)
+		if e["stacks"] > 1:
+			var l := _label("×%d" % e["stacks"], 24)
+			l.add_theme_color_override("font_outline_color", Color.BLACK)
+			l.add_theme_constant_override("outline_size", 5)
+			row.add_child(l)
+
+
+func _atlas(tex: Texture2D, region: Rect2) -> AtlasTexture:
+	var a := AtlasTexture.new()
+	a.atlas = tex
+	a.region = region
+	return a
+
+
+func _portrait_icon(id: String) -> Texture2D:
+	var i: int = Chibi.HERO_IDS.find(id)
+	if i < 0:
+		return null
+	# Head close-up from the portrait atlas.
+	var cell := Chibi.PCELL
+	return _atlas(Chibi.PORTRAITS, Rect2((i % Chibi.PCOLS) * cell + cell * 0.18, (i / Chibi.PCOLS) * cell + cell * 0.04, cell * 0.64, cell * 0.64))
+
+
+## Full-screen background picture scaled to cover the screen.
+func _cover_image(path: String) -> TextureRect:
+	var t := TextureRect.new()
+	t.texture = load(path)
+	t.set_anchors_preset(Control.PRESET_FULL_RECT)
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return t
+
+
+## Darkens the top and bottom of the scene so the panels and buttons stay readable.
+func _shade_overlay() -> TextureRect:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.16, 0.42, 0.62, 1.0])
+	g.colors = PackedColorArray([Color(0, 0, 0, 0.55), Color(0, 0, 0, 0.1), Color(0, 0, 0, 0.0), Color(0.02, 0.0, 0.05, 0.35), Color(0.02, 0.0, 0.05, 0.85)])
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill_from = Vector2(0, 0)
+	tex.fill_to = Vector2(0, 1)
+	tex.width = 4
+	tex.height = 256
+	var t := TextureRect.new()
+	t.texture = tex
+	t.set_anchors_preset(Control.PRESET_FULL_RECT)
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_SCALE
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return t
+
+
+func _set_scene(key, smooth: bool) -> void:
+	var tex: Texture2D = load(BACKGROUNDS.get(key, BACKGROUNDS[1]))
+	if not smooth:
+		scene_bg.texture = tex
+		return
+	var tw := create_tween()
+	tw.tween_property(scene_bg, "modulate", Color(0.2, 0.2, 0.2), 0.35)
+	tw.tween_callback(func(): scene_bg.texture = tex)
+	tw.tween_property(scene_bg, "modulate", Color.WHITE, 0.45)
 
 
 func _bump(u: Unit) -> void:
@@ -920,11 +1078,11 @@ func _victory_fx() -> void:
 	create_tween().tween_property(result_label, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
-func _float_text(u: Unit, text: String, color: Color) -> void:
+func _float_text(u: Unit, text: String, color: Color, font_size := 44) -> void:
 	if not cards.has(u):
 		return
 	var s: Control = cards[u]["sprite"]
-	var l := _label(text, 44)
+	var l := _label(text, font_size)
 	l.add_theme_color_override("font_color", color)
 	l.add_theme_color_override("font_outline_color", Color.BLACK)
 	l.add_theme_constant_override("outline_size", 8)
