@@ -70,18 +70,18 @@ func use_ult(u: Unit) -> bool:
 		"dps":
 			var t := _lowest_hp(_foes(u))
 			if t:
-				_attack(u, t, 3.0)
+				_attack(u, t, 3.0 * u.ult_mult)
 		"tank":
 			for a in _allies(u):
-				var amount := u.max_hp * 0.2
+				var amount := u.max_hp * 0.2 * u.ult_mult
 				a.shield += amount
 				acted.emit(u, a, amount, "shield")
 		"healer":
 			for a in _allies(u):
-				acted.emit(u, a, a.heal(u.atk * 2.5), "heal")
+				acted.emit(u, a, a.heal(u.atk * 2.5 * u.ult_mult), "heal")
 		"mage":
 			for t in _foes(u):
-				_attack(u, t, 1.5)
+				_attack(u, t, 1.5 * u.ult_mult)
 		_:
 			var t := _pick_enemy_target()
 			if t:
@@ -114,7 +114,7 @@ func _attack(attacker: Unit, target: Unit, mult: float) -> void:
 	dmg *= Data.element_mult(attacker.element, target.element)
 	dmg *= rng.randf_range(0.95, 1.05)
 	var kind := "hit"
-	if rng.randf() < CRIT_CHANCE:
+	if rng.randf() < CRIT_CHANCE + attacker.crit_bonus:
 		dmg *= CRIT_MULT
 		kind = "crit"
 	dmg = round(dmg)
