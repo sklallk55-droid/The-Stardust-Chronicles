@@ -17,6 +17,8 @@ var spd: float
 var shield := 0.0
 var gauge := 0.0
 var energy := 0.0
+var crit_bonus := 0.0  # from ascension passives
+var ult_mult := 1.0
 
 
 func _init(d: Dictionary, hero: bool, power: float = 1.0) -> void:
