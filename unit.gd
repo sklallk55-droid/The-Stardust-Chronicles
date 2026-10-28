@@ -2,6 +2,7 @@ extends RefCounted
 ## One fighter in battle (hero or enemy).
 
 const ENERGY_MAX := 100.0
+const DEF_POWER_CAP := 7.2
 
 var id: String
 var name: String
@@ -31,7 +32,8 @@ func _init(d: Dictionary, hero: bool, power: float = 1.0) -> void:
 	max_hp = round(d["hp"] * power)
 	hp = max_hp
 	atk = d["atk"] * power
-	def = d["def"] * power
+	# Defence stops growing after Act I, otherwise late fights stall on the time limit.
+	def = d["def"] * minf(power, DEF_POWER_CAP)
 	spd = d["spd"]
 
 
