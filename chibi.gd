@@ -28,6 +28,14 @@ const LOOKS := {
 	"golem": {"kind": "rock", "body": Color(0.45, 0.5, 0.4), "eyes": Color(0.6, 1.0, 0.5)},
 	"guardian": {"kind": "rock", "body": Color(0.35, 0.42, 0.32), "eyes": Color(1.0, 0.85, 0.3)},
 	"spirit": {"kind": "drop", "body": Color(0.35, 0.6, 0.95), "eyes": Color(0.05, 0.1, 0.3)},
+	"voidling": {"kind": "blob", "body": Color(0.12, 0.1, 0.2), "eyes": Color(0.75, 0.4, 1.0)},
+	"ember": {"kind": "flame", "body": Color(0.95, 0.3, 0.45), "eyes": Color(0.25, 0.02, 0.1)},
+	"thorn": {"kind": "rock", "body": Color(0.3, 0.45, 0.25), "eyes": Color(1.0, 0.4, 0.6)},
+	"frost": {"kind": "drop", "body": Color(0.7, 0.9, 1.0), "eyes": Color(0.1, 0.25, 0.5)},
+	"eater": {"kind": "blob", "body": Color(0.3, 0.12, 0.35), "eyes": Color(1.0, 0.85, 0.3)},
+	"noct": {"kind": "human", "hair": Color(0.08, 0.08, 0.12), "eyes": Color(0.95, 0.85, 0.3),
+		"outfit": Color(0.08, 0.06, 0.12), "trim": Color(0.45, 0.25, 0.7), "style": "long", "extra": "moon"},
+	"blackstar": {"kind": "flame", "body": Color(0.2, 0.1, 0.3), "eyes": Color(1.0, 0.95, 0.6)},
 }
 
 var id := ""
