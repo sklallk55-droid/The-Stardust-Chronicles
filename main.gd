@@ -1,9 +1,10 @@
 extends Control
-## Prototype screen: story, auto-battle, rewards and squad upgrade. UI is built in code.
+## Prototype screen: story, auto-battle, rewards, gear and squad upgrade. UI is built in code.
 
 const Data = preload("res://data.gd")
 const Unit = preload("res://unit.gd")
 const Battle = preload("res://battle.gd")
+const Equipment = preload("res://equipment.gd")
 
 const SAVE_PATH := "user://save.cfg"
 const IDLE_CAP_SEC := 12 * 3600
@@ -21,6 +22,9 @@ var auto_ult := false
 var cards := {}  # Unit -> {sprite, hp, en, box}
 var ult_buttons := []  # [{unit, button}]
 var story_lines: Array = []
+var equipped := {}  # hero_id -> {slot: item}
+var inventory: Array = []
+var rng := RandomNumberGenerator.new()
 
 var stage_label: Label
 var gold_label: Label
@@ -36,11 +40,14 @@ var auto_button: CheckButton
 var story_panel: PanelContainer
 var story_speaker: Label
 var story_text: Label
+var squad_panel: PanelContainer
+var squad_list: VBoxContainer
 
 
 func _ready() -> void:
 	theme = Theme.new()
 	theme.default_font_size = 34
+	rng.randomize()
 	_build_ui()
 	_load()
 	_prepare_battle()
@@ -98,6 +105,7 @@ func _build_ui() -> void:
 	middle.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(middle)
 	result_label = _label("", 72)
+	result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	middle.add_child(result_label)
 
 	hero_row = _row()
@@ -116,6 +124,9 @@ func _build_ui() -> void:
 	controls.add_child(auto_button)
 	speed_button = _button("Скорость ×1", _toggle_speed)
 	controls.add_child(speed_button)
+	var squad_button := _button("Отряд", _show_squad)
+	squad_button.custom_minimum_size.x = 200
+	controls.add_child(squad_button)
 
 	var actions := HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -129,6 +140,7 @@ func _build_ui() -> void:
 	actions.add_child(start_button)
 
 	_build_story_panel()
+	_build_squad_panel()
 
 
 func _build_story_panel() -> void:
@@ -218,7 +230,9 @@ func _prepare_battle() -> void:
 
 	var hero_units := []
 	for d in Data.heroes():
-		hero_units.append(Unit.new(d, true, Data.hero_power(level)))
+		var hero := Unit.new(d, true, Data.hero_power(level))
+		Equipment.apply(hero, equipped.get(hero.id, {}))
+		hero_units.append(hero)
 	var enemy_units := []
 	for d in Data.stage_enemies(stage):
 		enemy_units.append(Unit.new(d, false, Data.enemy_power(stage)))
@@ -264,6 +278,11 @@ func _on_ended(win: bool) -> void:
 		var reward := Data.victory_gold(stage)
 		gold += reward
 		result_label.text = "Победа! +%d" % reward
+		var drop := Equipment.roll_drop(stage, rng)
+		if not drop.is_empty():
+			inventory.append(drop)
+			Equipment.equip_best(equipped, inventory)
+			result_label.text += "\nВыпало: " + Equipment.item_label(drop)
 		result_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3))
 		stage += 1
 		start_button.text = "Дальше"
@@ -315,6 +334,90 @@ func _upgrade() -> void:
 func _toggle_speed() -> void:
 	speed = 2.0 if speed == 1.0 else 1.0
 	speed_button.text = "Скорость ×%d" % int(speed)
+
+
+# --- Squad screen ---
+
+func _build_squad_panel() -> void:
+	squad_panel = PanelContainer.new()
+	squad_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	squad_panel.offset_left = 32
+	squad_panel.offset_right = -32
+	squad_panel.offset_top = 140
+	squad_panel.offset_bottom = -140
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.04, 0.1, 0.97)
+	style.border_color = Color(0.5, 0.7, 1.0)
+	style.set_border_width_all(4)
+	style.set_corner_radius_all(24)
+	style.set_content_margin_all(36)
+	squad_panel.add_theme_stylebox_override("panel", style)
+	add_child(squad_panel)
+
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 24)
+	squad_panel.add_child(v)
+	v.add_child(_label("Отряд", 52))
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(scroll)
+	squad_list = VBoxContainer.new()
+	squad_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	squad_list.add_theme_constant_override("separation", 28)
+	scroll.add_child(squad_list)
+	var buttons := HBoxContainer.new()
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	buttons.add_theme_constant_override("separation", 24)
+	v.add_child(buttons)
+	var best := _button("Надеть лучшее", func():
+		Equipment.equip_best(equipped, inventory)
+		_save()
+		_fill_squad())
+	best.custom_minimum_size.x = 420
+	buttons.add_child(best)
+	var close := _button("Закрыть", func():
+		squad_panel.hide()
+		if not running:
+			_prepare_battle())
+	close.custom_minimum_size.x = 420
+	buttons.add_child(close)
+	squad_panel.hide()
+
+
+func _show_squad() -> void:
+	if running:
+		return
+	_fill_squad()
+	squad_panel.show()
+
+
+func _fill_squad() -> void:
+	for c in squad_list.get_children():
+		c.queue_free()
+	for d in Data.heroes():
+		var u := Unit.new(d, true, Data.hero_power(level))
+		var gear: Dictionary = equipped.get(u.id, {})
+		Equipment.apply(u, gear)
+		var block := VBoxContainer.new()
+		block.add_theme_constant_override("separation", 4)
+		var title := _label("%s · %s · ур. %d" % [u.name, Data.ELEMENT_NAMES[u.element], level], 38)
+		title.add_theme_color_override("font_color", u.color)
+		block.add_child(title)
+		block.add_child(_label("HP %d   АТК %d   ЗАЩ %d   СКР %d" % [u.max_hp, u.atk, u.def, u.spd], 30))
+		for slot in Equipment.SLOTS:
+			var text := "%s: —" % Equipment.SLOT_NAMES[slot]
+			var color := Color(0.6, 0.6, 0.7)
+			if gear.has(slot):
+				text = Equipment.item_label(gear[slot])
+				color = Equipment.RARITY_COLORS[gear[slot]["rarity"]]
+			var l := _label("   " + text, 28)
+			l.add_theme_color_override("font_color", color)
+			block.add_child(l)
+		squad_list.add_child(block)
+	var bag := _label("В сумке: %d / %d" % [inventory.size(), Equipment.INVENTORY_CAP], 28)
+	bag.modulate = Color(1, 1, 1, 0.7)
+	squad_list.add_child(bag)
 
 
 # --- Story ---
@@ -447,6 +550,8 @@ func _save() -> void:
 	cfg.set_value("player", "gold", gold)
 	cfg.set_value("player", "level", level)
 	cfg.set_value("player", "story_seen", story_seen)
+	cfg.set_value("gear", "equipped", equipped)
+	cfg.set_value("gear", "inventory", inventory)
 	cfg.set_value("player", "last_seen", int(Time.get_unix_time_from_system()))
 	cfg.save(SAVE_PATH)
 
@@ -459,6 +564,8 @@ func _load() -> void:
 	gold = cfg.get_value("player", "gold", 0)
 	level = cfg.get_value("player", "level", 1)
 	story_seen = cfg.get_value("player", "story_seen", 0)
+	equipped = cfg.get_value("gear", "equipped", {})
+	inventory = cfg.get_value("gear", "inventory", [])
 	var away := int(Time.get_unix_time_from_system()) - int(cfg.get_value("player", "last_seen", 0))
 	away = clampi(away, 0, IDLE_CAP_SEC)
 	var idle_gold := int(away / 60.0 * Data.idle_gold_per_min(maxi(1, stage - 1)))
