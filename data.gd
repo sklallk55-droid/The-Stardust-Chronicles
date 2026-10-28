@@ -23,7 +23,6 @@ static func heroes() -> Array:
 	]
 
 
-
 ## Heroes that join through summon.
 static func summon_heroes() -> Array:
 	return [
