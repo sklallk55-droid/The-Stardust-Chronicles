@@ -6,6 +6,7 @@ const Unit = preload("res://unit.gd")
 const Battle = preload("res://battle.gd")
 const Equipment = preload("res://equipment.gd")
 const Chibi = preload("res://chibi.gd")
+const Quests = preload("res://quests.gd")
 
 const SAVE_PATH := "user://save.cfg"
 const IDLE_CAP_SEC := 12 * 3600
@@ -28,6 +29,9 @@ var story_lines: Array = []
 var equipped := {}  # hero_id -> {slot: item}
 var inventory: Array = []
 var rng := RandomNumberGenerator.new()
+var mode := "story"  # story or tower
+var tower_floor := 1
+var quest_state := {}
 
 var stage_label: Label
 var gold_label: Label
@@ -46,6 +50,10 @@ var story_text: Label
 var story_portrait: Control
 var squad_panel: PanelContainer
 var squad_list: VBoxContainer
+var tower_button: Button
+var quests_button: Button
+var quests_panel: PanelContainer
+var quests_list: VBoxContainer
 
 
 func _ready() -> void:
@@ -54,6 +62,7 @@ func _ready() -> void:
 	rng.randomize()
 	_build_ui()
 	_load()
+	quest_state = Quests.current(quest_state)
 	_prepare_battle()
 
 
@@ -132,6 +141,17 @@ func _build_ui() -> void:
 	squad_button.custom_minimum_size.x = 200
 	controls.add_child(squad_button)
 
+	var modes := HBoxContainer.new()
+	modes.alignment = BoxContainer.ALIGNMENT_CENTER
+	modes.add_theme_constant_override("separation", 24)
+	col.add_child(modes)
+	tower_button = _button("Башня Пепла", _toggle_tower)
+	tower_button.custom_minimum_size.x = 440
+	modes.add_child(tower_button)
+	quests_button = _button("Задания", _show_quests)
+	quests_button.custom_minimum_size.x = 440
+	modes.add_child(quests_button)
+
 	var actions := HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	actions.add_theme_constant_override("separation", 24)
@@ -145,6 +165,7 @@ func _build_ui() -> void:
 
 	_build_story_panel()
 	_build_squad_panel()
+	_build_quests_panel()
 
 
 func _build_story_panel() -> void:
@@ -233,8 +254,10 @@ func _prepare_battle() -> void:
 		Equipment.apply(hero, equipped.get(hero.id, {}))
 		hero_units.append(hero)
 	var enemy_units := []
-	for d in Data.stage_enemies(stage):
-		enemy_units.append(Unit.new(d, false, Data.enemy_power(stage)))
+	var enemy_list := Data.tower_enemies(tower_floor) if mode == "tower" else Data.stage_enemies(stage)
+	var power := Data.tower_power(tower_floor) if mode == "tower" else Data.enemy_power(stage)
+	for d in enemy_list:
+		enemy_units.append(Unit.new(d, false, power))
 
 	battle = Battle.new(hero_units, enemy_units)
 	battle.acted.connect(_on_acted)
@@ -255,7 +278,7 @@ func _prepare_battle() -> void:
 	start_button.text = "В бой!"
 	_refresh_top()
 	_refresh_units()
-	if stage > story_seen and Data.story().has(stage):
+	if mode == "story" and stage > story_seen and Data.story().has(stage):
 		_show_story(Data.story()[stage])
 	story_seen = maxi(story_seen, stage)
 
@@ -268,12 +291,16 @@ func _on_start() -> void:
 	running = true
 	start_button.disabled = true
 	upgrade_button.disabled = true
+	tower_button.disabled = true
 
 
 func _on_ended(win: bool) -> void:
 	running = false
 	_refresh_units()
-	if win:
+	if win and mode == "tower":
+		_on_tower_win()
+	elif win:
+		Quests.add(quest_state, "wins")
 		var reward := Data.victory_gold(stage)
 		gold += reward
 		result_label.text = "Победа! +%d" % reward
@@ -291,8 +318,35 @@ func _on_ended(win: bool) -> void:
 		start_button.text = "Ещё раз"
 	start_button.disabled = false
 	upgrade_button.disabled = false
+	tower_button.disabled = false
 	_refresh_top()
 	_save()
+
+
+func _on_tower_win() -> void:
+	Quests.add(quest_state, "wins")
+	Quests.add(quest_state, "tower")
+	var reward := Data.victory_gold(9 + tower_floor) * 2
+	gold += reward
+	result_label.text = "Этаж %d пройден! +%d" % [tower_floor, reward]
+	var drop := Equipment.roll_drop(tower_floor + 10, rng, true)
+	inventory.append(drop)
+	Equipment.equip_best(equipped, inventory)
+	result_label.text += "\nВыпало: " + Equipment.item_label(drop)
+	result_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3))
+	tower_floor += 1
+	start_button.text = "Выше"
+
+
+func _toggle_tower() -> void:
+	if running:
+		return
+	if mode == "story" and stage < Data.TOWER_UNLOCK_STAGE:
+		result_label.text = "Башня откроется\nпосле босса главы 1"
+		result_label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.9))
+		return
+	mode = "tower" if mode == "story" else "story"
+	_prepare_battle()
 
 
 func _on_acted(actor: Unit, target: Unit, amount: float, kind: String) -> void:
@@ -311,6 +365,8 @@ func _on_acted(actor: Unit, target: Unit, amount: float, kind: String) -> void:
 
 
 func _on_ult(actor: Unit) -> void:
+	if actor.is_hero:
+		Quests.add(quest_state, "ults")
 	if not cards.has(actor):
 		return
 	var s: Control = cards[actor]["sprite"]
@@ -326,6 +382,7 @@ func _upgrade() -> void:
 		return
 	gold -= cost
 	level += 1
+	Quests.add(quest_state, "upgrade")
 	_save()
 	_prepare_battle()
 
@@ -419,6 +476,69 @@ func _fill_squad() -> void:
 	squad_list.add_child(bag)
 
 
+# --- Daily quests ---
+
+func _build_quests_panel() -> void:
+	quests_panel = PanelContainer.new()
+	quests_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	quests_panel.offset_left = 32
+	quests_panel.offset_right = -32
+	quests_panel.offset_top = 300
+	quests_panel.offset_bottom = -300
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.04, 0.1, 0.97)
+	style.border_color = Color(1, 0.82, 0.45)
+	style.set_border_width_all(4)
+	style.set_corner_radius_all(24)
+	style.set_content_margin_all(36)
+	quests_panel.add_theme_stylebox_override("panel", style)
+	add_child(quests_panel)
+
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 24)
+	quests_panel.add_child(v)
+	v.add_child(_label("Задания на сегодня", 48))
+	quests_list = VBoxContainer.new()
+	quests_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	quests_list.add_theme_constant_override("separation", 20)
+	v.add_child(quests_list)
+	var close := _button("Закрыть", func(): quests_panel.hide())
+	close.custom_minimum_size.x = 420
+	close.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	v.add_child(close)
+	quests_panel.hide()
+
+
+func _show_quests() -> void:
+	if running:
+		return
+	quest_state = Quests.current(quest_state)
+	_fill_quests()
+	quests_panel.show()
+
+
+func _fill_quests() -> void:
+	for c in quests_list.get_children():
+		c.queue_free()
+	for q in Quests.LIST:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 16)
+		var info := _label("%s  %d/%d" % [q["text"], Quests.progress(quest_state, q), q["goal"]], 30)
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(info)
+		var claimed: bool = quest_state["claimed"].has(q["id"])
+		var b := _button("Получено" if claimed else "+%d" % Quests.reward(q, stage), func():
+			gold += Quests.claim(quest_state, q, stage)
+			_save()
+			_refresh_top()
+			_fill_quests())
+		b.custom_minimum_size.x = 220
+		b.disabled = not Quests.can_claim(quest_state, q)
+		row.add_child(b)
+		quests_list.add_child(row)
+
+
 # --- Story ---
 
 func _show_story(lines: Array) -> void:
@@ -446,6 +566,11 @@ func _next_story_line() -> void:
 
 func _refresh_top() -> void:
 	stage_label.text = "Глава %d · Этап %d" % [(stage - 1) / 10 + 1, (stage - 1) % 10 + 1]
+	if mode == "tower":
+		stage_label.text = "Башня Пепла · этаж %d" % tower_floor
+	tower_button.text = "К сюжету" if mode == "tower" else "Башня Пепла"
+	var ready_quests := Quests.unclaimed_count(quest_state)
+	quests_button.text = "Задания (%d!)" % ready_quests if ready_quests > 0 else "Задания"
 	gold_label.text = "Золото: %d" % gold
 	level_label.text = "Уровень отряда: %d" % level
 	upgrade_button.text = "Улучшить (%d)" % Data.upgrade_cost(level)
@@ -554,6 +679,8 @@ func _save() -> void:
 	cfg.set_value("player", "story_seen", story_seen)
 	cfg.set_value("gear", "equipped", equipped)
 	cfg.set_value("gear", "inventory", inventory)
+	cfg.set_value("tower", "floor", tower_floor)
+	cfg.set_value("quests", "state", quest_state)
 	cfg.set_value("player", "last_seen", int(Time.get_unix_time_from_system()))
 	cfg.save(SAVE_PATH)
 
@@ -568,6 +695,8 @@ func _load() -> void:
 	story_seen = cfg.get_value("player", "story_seen", 0)
 	equipped = cfg.get_value("gear", "equipped", {})
 	inventory = cfg.get_value("gear", "inventory", [])
+	tower_floor = cfg.get_value("tower", "floor", 1)
+	quest_state = cfg.get_value("quests", "state", {})
 	var away := int(Time.get_unix_time_from_system()) - int(cfg.get_value("player", "last_seen", 0))
 	away = clampi(away, 0, IDLE_CAP_SEC)
 	var idle_gold := int(away / 60.0 * Data.idle_gold_per_min(maxi(1, stage - 1)))
