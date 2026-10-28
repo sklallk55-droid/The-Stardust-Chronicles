@@ -14,9 +14,9 @@ const INVENTORY_CAP := 30
 
 # Which hero gets the best item of each slot first.
 const PRIORITY := {
-	"weapon": ["akira", "kae", "ryu", "yuki", "ren", "isa", "tetsuo", "mira"],
-	"armor": ["ryu", "yuki", "akira", "kae", "tetsuo", "mira", "ren", "isa"],
-	"amulet": ["yuki", "akira", "kae", "ryu", "mira", "ren", "isa", "tetsuo"],
+	"weapon": ["akira", "kae", "ryu", "yuki", "ren", "isa", "sara", "tetsuo", "mira"],
+	"armor": ["ryu", "yuki", "akira", "kae", "tetsuo", "mira", "ren", "isa", "sara"],
+	"amulet": ["yuki", "akira", "kae", "ryu", "mira", "ren", "isa", "sara", "tetsuo"],
 }
 
 
